@@ -96,8 +96,7 @@ function autoArchiveTahunan() {
 }
 
 function archiveData(yearToArchive) {
-  if (!ARCHIVE_FOLDER_ID || ARCHIVE_FOLDER_ID === '1AzWvvP_Lo6TBWR06TGHFDsFkT1J5ET5n') return;
-
+  if (!ARCHIVE_FOLDER_ID) return;
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(DATA_SHEET_NAME);
   const lastRow = sheet.getLastRow();
@@ -498,10 +497,8 @@ function submitData(payload) {
   const targetRuangan = normText(ruangan);
   const now = new Date();
 
-  payload.entries.forEach(function (entry) {
-    if (entry.numerator === '' && entry.denominator === '') {
-      return;
-    }
+ payload.entries.forEach(function (entry) {
+    if (entry.numerator === '' && entry.denominator === '') return;
 
     const targetIndikator = normText(entry.indikator);
     let foundRowIndex = -1;
@@ -514,13 +511,15 @@ function submitData(payload) {
     }
 
     const rowValues = [now, new Date(tanggal), ruangan, entry.indikator, Number(entry.numerator) || 0, Number(entry.denominator) || 0, payload.diisiOleh || '', entry.keterangan || ''];
-
+    
     if (foundRowIndex > -1) {
       sheet.getRange(foundRowIndex, 1, 1, DATA_HEADERS.length).setValues([rowValues]);
     } else {
       sheet.appendRow(rowValues);
     }
   });
+
+  cekDanArsipOtomatis(); 
 
   return { status: 'ok', message: 'Data tersimpan.' };
 }
