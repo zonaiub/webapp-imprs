@@ -84,7 +84,90 @@
  *                                          harus persis tertulis "hitungan"
  * =================================================================
  */
+// =================================================================
+// KONFIGURASI FOLDER ARSIP (WAJIB DIISI)
+// =================================================================
+const ARCHIVE_FOLDER_ID = '1AzWvvP_Lo6TBWR06TGHFDsFkT1J5ET5n';
+// =================================================================
 
+function autoArchiveTahunan() {
+  const prevYear = new Date().getFullYear() - 1;
+  archiveData(prevYear);
+}
+
+function archiveData(yearToArchive) {
+  if (!ARCHIVE_FOLDER_ID || ARCHIVE_FOLDER_ID === '1AzWvvP_Lo6TBWR06TGHFDsFkT1J5ET5n') return;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(DATA_SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  const data = sheet.getRange(2, 1, lastRow - 1, DATA_HEADERS.length).getValues();
+  const rowsToArchive = [];
+  const rowsToKeep = [];
+
+  data.forEach(row => {
+    if (!row[1]) return;
+    new Date(row[1]).getFullYear() === yearToArchive ? rowsToArchive.push(row) : rowsToKeep.push(row);
+  });
+
+  if (rowsToArchive.length === 0) return;
+
+  const folder = DriveApp.getFolderById(ARCHIVE_FOLDER_ID);
+  const fileName = "Arsip_IMPRS_" + yearToArchive;
+  let archiveSs;
+  const existingFiles = folder.searchFiles("title = '" + fileName + "' and mimeType = 'application/vnd.google-apps.spreadsheet'");
+  
+  if (existingFiles.hasNext()) {
+    archiveSs = SpreadsheetApp.openById(existingFiles.next().getId());
+  } else {
+    const newFile = SpreadsheetApp.create(fileName);
+    DriveApp.getFileById(newFile.getId()).moveTo(folder);
+    archiveSs = SpreadsheetApp.openById(newFile.getId());
+    archiveSs.getSheets()[0].appendRow(DATA_HEADERS);
+    archiveSs.getSheets()[0].setFrozenRows(1);
+  }
+
+  const archiveSheet = archiveSs.getSheets()[0];
+  archiveSheet.getRange(archiveSheet.getLastRow() + 1, 1, rowsToArchive.length, DATA_HEADERS.length).setValues(rowsToArchive);
+
+  sheet.getRange(2, 1, lastRow - 1, DATA_HEADERS.length).clearContent();
+  if (rowsToKeep.length > 0) sheet.getRange(2, 1, rowsToKeep.length, DATA_HEADERS.length).setValues(rowsToKeep);
+}
+
+function getRawDataByYears(startYear, endYear) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let allData = [];
+  const sheet = ss.getSheetByName(DATA_SHEET_NAME);
+  if (sheet && sheet.getLastRow() > 1) {
+    allData = allData.concat(sheet.getRange(2, 1, sheet.getLastRow() - 1, DATA_HEADERS.length).getValues());
+  }
+  if (ARCHIVE_FOLDER_ID && ARCHIVE_FOLDER_ID !== 'GANTI_DENGAN_ID_FOLDER_00_ARSIP_DATA_MUTU_DI_SINI') {
+    for (let y = startYear; y <= endYear; y++) {
+      try {
+        const files = DriveApp.getFolderById(ARCHIVE_FOLDER_ID).searchFiles("title = 'Arsip_IMPRS_" + y + "' and mimeType = 'application/vnd.google-apps.spreadsheet'");
+        if (files.hasNext()) {
+          const archSheet = SpreadsheetApp.openById(files.next().getId()).getSheets()[0];
+          if (archSheet && archSheet.getLastRow() > 1) {
+            allData = allData.concat(archSheet.getRange(2, 1, archSheet.getLastRow() - 1, DATA_HEADERS.length).getValues());
+          }
+        }
+      } catch (e) {}
+    }
+  }
+  const filtered = allData.filter(row => {
+    if(!row[1]) return false;
+    const y = new Date(row[1]).getFullYear();
+    return y >= startYear && y <= endYear;
+  });
+  const uniqueData = {};
+  filtered.forEach(row => {
+    const key = Utilities.formatDate(new Date(row[1]), Session.getScriptTimeZone(), 'yyyy-MM-dd') + '_' + normText(row[2]) + '_' + normText(row[3]);
+    if (!uniqueData[key]) uniqueData[key] = row;
+  });
+  return Object.values(uniqueData);
+}
 const CONFIG_SHEET_NAME = 'Config';
 const DATA_SHEET_NAME = 'Data Master';
 const USERS_SHEET_NAME = 'Users';
@@ -358,9 +441,8 @@ function getIndicatorDetails() {
  */
 function getExistingEntries(ruangan, tanggal) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return {};
-  const data = sheet.getRange(2, 1, lastRow - 1, DATA_HEADERS.length).getValues();
+  const targetYear = new Date(tanggal).getFullYear();
+  const data = getRawDataByYears(targetYear, targetYear);
   const result = {};
   const targetRuangan = normText(ruangan);
   data.forEach(function (row) {
@@ -463,8 +545,10 @@ function getRecapMatrix(mode, params) {
   const configValues = configSheet.getRange('B2:F' + lastConfigRow).getValues().filter(function (r) { return r[0]; });
   const indicatorList = configValues.map(function (r) { return { nama: r[0], tipe: r[4] || 'persen' }; });
 
-  const lastRow = dataSheet.getLastRow();
-  const data = lastRow >= 2 ? dataSheet.getRange(2, 1, lastRow - 1, DATA_HEADERS.length).getValues() : [];
+  let targetYear;
+  if (mode === 'harian') targetYear = new Date(params.tanggal).getFullYear();
+  else targetYear = Number(params.tahun);
+  const data = getRawDataByYears(targetYear, targetYear);
 
   const totals = {};
   const roomPics = {};
@@ -538,9 +622,10 @@ function getRecap(ruangan, mode, params) {
   // Indikator persen yang arah targetnya kebalik: target itu batas MAKSIMAL, bukan minimal.
   const REVERSE_INDICATORS = REVERSE_INDICATOR_NAMES.map(normText);
 
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  const data = sheet.getRange(2, 1, lastRow - 1, DATA_HEADERS.length).getValues();
+  let targetYear;
+  if (mode === 'harian') targetYear = new Date(params.tanggal).getFullYear();
+  else targetYear = Number(params.tahun);
+  const data = getRawDataByYears(targetYear, targetYear);
   const totals = {};
   const targetRuangan = normText(ruangan);
 
@@ -678,10 +763,7 @@ function computeReportData(startDateStr, endDateStr) {
     }
   }
 
-  const lastDataRow = dataSheet.getLastRow();
-  const rawData = lastDataRow >= 2
-    ? dataSheet.getRange(2, 1, lastDataRow - 1, DATA_HEADERS.length).getValues()
-    : [];
+  const rawData = getRawDataByYears(startDate.getFullYear(), endDate.getFullYear());
 
   return indicatorList.map(function (ind) {
     const bucketResults = buckets.map(function (b) {
@@ -728,14 +810,47 @@ function buildPptPresentation(startDateStr, endDateStr) {
   const presTitle = 'Laporan Indikator Mutu ' + startDateStr + ' sd ' + endDateStr;
   const pres = SlidesApp.create(presTitle);
 
-  const titleSlide = pres.getSlides()[0];
-  titleSlide.getShapes().forEach(function (sh) {
-    try { sh.remove(); } catch (e) { /* ignore */ }
-  });
-  const titleBox = titleSlide.insertTextBox('LAPORAN INDIKATOR MUTU PRIORITAS RS (IMPRS)', 40, 180, 860, 80);
-  titleBox.getText().getTextStyle().setFontSize(32).setBold(true);
-  const subBox = titleSlide.insertTextBox(startDateStr + ' s.d ' + endDateStr, 40, 270, 860, 40);
-  subBox.getText().getTextStyle().setFontSize(18);
+  // ====================================================
+    // 1. SLIDE JUDUL (DESAIN ELEGAN + LOGO AMINO)
+    // ====================================================
+    const titleSlide = pres.getSlides()[0];
+    titleSlide.getShapes().forEach(function (sh) {
+      try { sh.remove(); } catch (e) { /* ignore */ }
+    });
+    
+    // Bikin background jadi warna biru gelap elegan khas tema dark
+    titleSlide.getBackground().setSolidFill('#0f172a'); 
+    
+    const pageWidth = pres.getPageWidth();
+    
+    // --- MASUKKAN LOGO AMINO ---
+    try {
+      // GANTI TEKS DI BAWAH DENGAN ID FILE LOGO AMINO DI DRIVE KAMU
+      const logoBlob = DriveApp.getFileById('1Ityk6FqSmCIm7ij-SEgtCju_pLgnGz1B').getBlob(); 
+      const logoImg = titleSlide.insertImage(logoBlob);
+      logoImg.setWidth(130).setHeight(130);
+      logoImg.setLeft((pageWidth - 130) / 2); // Auto tengah
+      logoImg.setTop(45);
+    } catch(e) {
+      Logger.log("Logo tidak ditemukan/ID salah: " + e.message);
+    }
+
+    // --- JUDUL LAPORAN (DIBUAT 2 BARIS BIAR NGGAK NABRAK) ---
+    // Lebar dibatasi (pageWidth - 80) supaya margin kanan-kiri pas
+    const titleBox = titleSlide.insertTextBox('LAPORAN INDIKATOR MUTU PRIORITAS RS (IMPRS)', 40, 200, pageWidth - 80, 100);
+    titleBox.getText().getTextStyle().setFontSize(32).setBold(true).setForegroundColor('#ffffff');
+    titleBox.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+    
+    // --- FORMAT TANGGAL ---
+    const dStart = new Date(startDateStr);
+    const dEnd = new Date(endDateStr);
+    const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const dateText = dStart.getDate() + ' ' + months[dStart.getMonth()] + ' ' + dStart.getFullYear() + ' - ' + 
+                     dEnd.getDate() + ' ' + months[dEnd.getMonth()] + ' ' + dEnd.getFullYear();
+
+    const subBox = titleSlide.insertTextBox(dateText, 40, 320, pageWidth - 80, 40);
+    subBox.getText().getTextStyle().setFontSize(18).setForegroundColor('#94a3b8');
+    subBox.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
 
   let chartRow = 1;
   reportData.forEach(function (ind) {
@@ -758,6 +873,17 @@ function buildPptPresentation(startDateStr, endDateStr) {
         1: { type: 'line', color: '#ea4335', lineWidth: 2, pointSize: 0 }
       })
       .setPosition(headerRow, 6, 0, 0);
+
+    // KODE TAMBAHAN: Paksa sumbu Y mulai dari 0.
+    // Jika targetnya persis 100, batas atas jadi 110 biar ada ruang lega di atas.
+    if (ind.target == 100) {
+      chartBuilder.setOption('vAxis.viewWindow.min', 0);
+      chartBuilder.setOption('vAxis.viewWindow.max', 110);
+    } else {
+      // Untuk indikator lain, tetap paksa mulai dari 0
+      chartBuilder.setOption('vAxis.viewWindow.min', 0);
+    }
+
     const chart = chartBuilder.build();
     tempSheet.insertChart(chart);
     SpreadsheetApp.flush();
@@ -767,21 +893,30 @@ function buildPptPresentation(startDateStr, endDateStr) {
 
     const slide = pres.appendSlide(SlidesApp.PredefinedLayout.BLANK);
 
+    // ====================================================
+    // KODE UKURAN LAYAR YANG KEMARIN HILANG (WAJIB ADA)
+    // ====================================================
     const pageWidth = pres.getPageWidth();
     const pageHeight = pres.getPageHeight();
     const margin = 20;
     const contentWidth = pageWidth - margin * 2;
-    const leftBannerWidth = 100;
-    const rightBannerWidth = contentWidth - leftBannerWidth;
-
     const bottomMargin = 20;
     const noteBoxHeight = 60;
     const gapBeforeNote = 15;
-    const chartTop = 65;
+    const chartTop = 85; 
     const noteBoxTop = pageHeight - bottomMargin - noteBoxHeight;
     const chartHeight = noteBoxTop - gapBeforeNote - chartTop;
 
-    const bannerLeft = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin, 15, leftBannerWidth, 36);
+    // ====================================================
+    // KODE BANNER ATAS (TINGGI DIKUNCI 60)
+    // ====================================================
+    const leftBannerWidth = 100;
+    const targetBannerWidth = 150;
+    const centerBannerWidth = contentWidth - leftBannerWidth - targetBannerWidth;
+    const bannerHeight = 60;
+
+    // Banner Kiri (IMPRS)
+    const bannerLeft = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin, 15, leftBannerWidth, bannerHeight);
     bannerLeft.getFill().setSolidFill('#4a86c8');
     bannerLeft.getBorder().setTransparent();
     bannerLeft.getText().setText('IMPRS');
@@ -789,13 +924,29 @@ function buildPptPresentation(startDateStr, endDateStr) {
     bannerLeft.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
     bannerLeft.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
 
-    const bannerRight = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin + leftBannerWidth, 15, rightBannerWidth, 36);
-    bannerRight.getFill().setSolidFill('#5a9bd8');
-    bannerRight.getBorder().setTransparent();
-    bannerRight.getText().setText(ind.nama);
-    bannerRight.getText().getTextStyle().setForegroundColor('#ffffff').setBold(true).setFontSize(14);
-    bannerRight.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
-    bannerRight.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
+    // Banner Tengah (Judul Indikator)
+    const bannerCenter = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin + leftBannerWidth, 15, centerBannerWidth, bannerHeight);
+    bannerCenter.getFill().setSolidFill('#6fa8dc');
+    bannerCenter.getBorder().setTransparent();
+    bannerCenter.getText().setText(ind.nama);
+    bannerCenter.getText().getTextStyle().setForegroundColor('#ffffff').setBold(true).setFontSize(13);
+    bannerCenter.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+    bannerCenter.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
+
+    // Banner Kanan (Target Merah)
+    const isReverse = REVERSE_INDICATOR_NAMES.map(normText).indexOf(normText(ind.nama)) > -1;
+    let targetValText = '-';
+    if (ind.target !== null && ind.target !== undefined && ind.target !== '') {
+      targetValText = (ind.tipe === 'hitungan') ? ind.target : (isReverse ? '≤ ' : '≥ ') + ind.target + '%';
+    }
+
+    const bannerTarget = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin + leftBannerWidth + centerBannerWidth, 15, targetBannerWidth, bannerHeight);
+    bannerTarget.getFill().setSolidFill('#c5221f');
+    bannerTarget.getBorder().setTransparent();
+    bannerTarget.getText().setText('Target: ' + targetValText);
+    bannerTarget.getText().getTextStyle().setForegroundColor('#ffffff').setBold(true).setFontSize(14);
+    bannerTarget.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+    bannerTarget.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
 
     slide.insertSheetsChart(embeddedChart, margin, chartTop, contentWidth, chartHeight);
 
@@ -868,16 +1019,14 @@ function getMissingRooms(bulan, tahun) {
   const lastDataRow = dataSheet.getLastRow();
   const roomsWithData = {};
 
-  if (lastDataRow >= 2) {
-    const rawData = dataSheet.getRange(2, 1, lastDataRow - 1, DATA_HEADERS.length).getValues();
-    rawData.forEach(function (row) {
-      const tgl = new Date(row[1]);
-      if ((tgl.getMonth() + 1) === Number(bulan) && tgl.getFullYear() === Number(tahun)) {
-        roomsWithData[normText(row[2])] = true;
-      }
-    });
-  }
-
+  const rawData = getRawDataByYears(Number(tahun), Number(tahun));
+  rawData.forEach(function (row) {
+    const tgl = new Date(row[1]);
+    if ((tgl.getMonth() + 1) === Number(bulan) && tgl.getFullYear() === Number(tahun)) {
+      roomsWithData[normText(row[2])] = true;
+    }
+  });
+  
   return allRooms.filter(function (room) { return !roomsWithData[normText(room)]; });
 }
 
@@ -962,6 +1111,17 @@ function testGeneratePptReportKeepFile() {
       const embeddedChart = chartsOnSheet[chartsOnSheet.length - 1];
 
       const slide = pres.appendSlide(SlidesApp.PredefinedLayout.BLANK);
+      const pageWidth = pres.getPageWidth();
+    const pageHeight = pres.getPageHeight();
+    const margin = 20;
+    const contentWidth = pageWidth - margin * 2;
+    
+    const bottomMargin = 20;
+    const noteBoxHeight = 60;
+    const gapBeforeNote = 15;
+    const chartTop = 85; // Jarak atas disesuaikan biar chart gak nabrak banner
+    const noteBoxTop = pageHeight - bottomMargin - noteBoxHeight;
+    const chartHeight = noteBoxTop - gapBeforeNote - chartTop;
       slide.insertTextBox(ind.nama, 20, 15, 900, 40);
       slide.insertSheetsChart(embeddedChart, 20, 65, 520, 300);
 
@@ -1046,3 +1206,57 @@ function exportRecapExcel(title, headers, rows) {
   };
 }
 
+function resetPassword(username, ruangan) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const inputUser = String(username || '').trim().toLowerCase();
+  const inputRuangan = normText(ruangan);
+
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim().toLowerCase() === inputUser) {
+      if (normText(data[i][3]) === inputRuangan) {
+        sheet.getRange(i + 1, 2).setValue('inm123');
+        return { success: true, message: 'Berhasil! Password direset menjadi: inm123' };
+      } else {
+        return { success: false, message: 'Gagal: Username dan Ruangan tidak cocok!' };
+      }
+    }
+  }
+  return { success: false, message: 'Gagal: Username tidak ditemukan.' };
+}
+function changePassword(oldPass, newPass) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const user = Session.getActiveUser().getEmail() || "admin"; // Sesuaikan jika pakai login manual
+  
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] == user) {
+      if (String(data[i][1]) == String(oldPass)) {
+        sheet.getRange(i + 1, 2).setValue(newPass);
+        return { success: true, message: "Password berhasil diubah!" };
+      }
+      return { success: false, message: "Password lama salah!" };
+    }
+  }
+  return { success: false, message: "User tidak ditemukan." };
+}
+function changePassword(username, oldPass, newPass) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(USERS_SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const inputUser = String(username || '').trim().toLowerCase();
+  
+  for (let i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim().toLowerCase() === inputUser) {
+      if (String(data[i][1]) === String(oldPass)) {
+        sheet.getRange(i + 1, 2).setValue(newPass);
+        return { success: true, message: "Berhasil! Password berhasil diubah." };
+      } else {
+        return { success: false, message: "Gagal: Password lama salah!" };
+      }
+    }
+  }
+  return { success: false, message: "Gagal: Username tidak ditemukan." };
+}
