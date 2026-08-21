@@ -4,6 +4,18 @@
   <base target="_top">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    /* Tampilan Otomatis Menyesuaikan Layar PC/Laptop */
+  @media screen and (min-width: 768px) {
+    .login-container, .app-container {
+      max-width: 800px !important;
+      margin: 40px auto !important;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    }
+    #valModal {
+      max-width: 600px !important;
+    }
+  }
     :root {
       --primary-900: #0b3d91;
       --primary-700: #1a56c4;
@@ -537,7 +549,53 @@
   </div>
   </div>
 
+  <!-- ========================================== -->
+<!-- DASHBOARD KHUSUS TIM VALIDATOR             -->
+<!-- ========================================== -->
+<div id="validatorDashboard" style="display:none; padding:15px; max-width:800px; margin:0 auto;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+    <div>
+      <h2 style="color:#60a5fa; margin:0; font-size:22px;">Tugas Validasi Data</h2>
+      <p style="color:#94a3b8; font-size:13px; margin:4px 0 0 0;">Daftar data harian/bulanan yang menunggu ACC.</p>
+    </div>
+    <button onclick="loadPendingValidations()" style="padding:10px 16px; background:#2563eb; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:13px; transition:0.2s; box-shadow:0 4px 6px rgba(0,0,0,0.3);">🔄 Refresh Data</button>
+  </div>
   
+  <!-- Tempat List Data Muncul -->
+  <div id="valListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
+</div>
+
+<!-- ========================================== -->
+<!-- MODAL INPUT ANGKA VALIDASI                 -->
+<!-- ========================================== -->
+<div id="valModal" style="display:none; position:fixed; top:5%; left:50%; transform:translate(-50%, 0); width:90%; max-width:420px; background:#1e293b; padding:24px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.8); z-index:9999; border: 1px solid #334155; max-height:85vh; overflow-y:auto;">
+  
+  <h3 id="valModalTitle" style="margin-top:0; color:#60a5fa; font-size:16px; font-weight:bold;">Validasi Data</h3>
+  <p id="valModalSubtitle" style="font-size:13px; color:#cbd5e1; margin-bottom:20px; line-height:1.4;"></p>
+
+  <input type="hidden" id="valRowIndex">
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Total Populasi Data</label>
+  <input type="number" id="valPopulasi" placeholder="Cth: 4999" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Jumlah Sampel (10%)</label>
+  <input type="number" id="valSampel" placeholder="Cth: 500" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Jumlah Patuh (Numerator Sampel)</label>
+  <input type="number" id="valNumSampel" placeholder="Cth: 480" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Link Bukti Observasi (Google Drive / Excel)</label>
+  <input type="text" id="valLink" placeholder="Paste link di sini..." style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Catatan Validator (Opsional)</label>
+  <textarea id="valCatatan" rows="2" placeholder="Tulis catatan jika ada revisi..." style="width:100%; padding:10px; margin-bottom:20px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;"></textarea>
+
+  <div style="display:flex; gap:10px; margin-bottom:10px;">
+    <button onclick="doSubmitVal('✅ Valid')" style="flex:1; padding:12px; background:#16a34a; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">✅ Valid</button>
+    <button onclick="doSubmitVal('❌ Kembalikan')" style="flex:1; padding:12px; background:#dc2626; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer;">❌ Kembalikan</button>
+  </div>
+  <button onclick="document.getElementById('valModal').style.display='none'" style="width:100%; padding:12px; background:transparent; color:#94a3b8; border:1px solid #475569; border-radius:8px; font-weight:bold; cursor:pointer;">Batal / Tutup</button>
+</div>
    <!-- MODAL GANTI PASSWORD -->
 <div id="passModal" style="display:none; position:fixed; top:15%; left:50%; transform:translate(-50%, 0); width:90%; max-width:400px; background:#1e293b; padding:24px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6); z-index:9999; border: 1px solid #334155;">
   
@@ -685,18 +743,39 @@ function doChangePass() {
       document.getElementById('loginArea').style.display = 'block';
     }
 
-    function enterApp(role, ruangan, username) {
-      currentRole = role;
-      PRESET_ROOM = role === 'pic' ? ruangan : '';
+    function enterApp(user, ruangan, role) {
+  document.getElementById('loginArea').style.display = 'none';
+  document.getElementById('userDisplay').innerText = 'Ruangan: ' + ruangan;
+  document.getElementById('mainApp').style.display = 'block';
 
-      document.getElementById('loginArea').style.display = 'none';
-      document.getElementById('appWrap').style.display = 'block';
-      document.getElementById('loggedInAs').textContent =
-        role === 'admin' ? 'Login sebagai Admin' : 'Ruangan: ' + ruangan;
-      switchTab('input');
+  if (role === 'validator') {
+    // Sembunyikan pernak-pernik milik PIC agar bersih
+    var hide1 = document.querySelector('#mainApp h2');
+    var hide2 = document.querySelector('#mainApp p');
+    var hide3 = document.getElementById('loading');
+    var hide4 = document.querySelector('.tabs');
+    var hide5 = document.getElementById('formContainer');
+    
+    if(hide1) hide1.style.display = 'none';
+    if(hide2) hide2.style.display = 'none';
+    if(hide3) hide3.style.display = 'none';
+    if(hide4) hide4.style.display = 'none';
+    if(hide5) hide5.style.display = 'none';
 
-      init();
-    }
+    document.getElementById('validatorDashboard').style.display = 'block';
+    
+    // Simpan data siapa validator yang sedang login
+    window.currentValidator = user;
+    loadPendingValidations(); 
+    return;
+  }
+
+  // Jika yang login adalah PIC Ruangan biasa
+  google.script.run.withSuccessHandler(function(data) {
+    window.appData = data;
+    renderForm(ruangan);
+  }).getFormData();
+}
 
     function bootstrap() {
       const saved = localStorage.getItem(LOGIN_STORAGE_KEY);
@@ -1279,9 +1358,82 @@ function doChangePass() {
         })
         .submitData({ ruangan, tanggal, diisiOleh, entries });
     }
+bootstrap();
 
-    bootstrap();
-  </script>
+// ==========================================
+// MESIN PENGGERAK VALIDATOR
+// ==========================================
+function loadPendingValidations() {
+  var container = document.getElementById('valListContainer');
+  container.innerHTML = '<div style="color:#fbbf24; text-align:center; padding:20px;">Mengambil data...</div>';
+  
+  google.script.run.withSuccessHandler(function(data) {
+    if(data.length === 0) {
+      container.innerHTML = '<div style="color:#22c55e; text-align:center; padding:30px; background:#0f172a; border-radius:10px; border:1px solid #1e293b;">🎉 Keren! Semua data sudah tervalidasi. Kosong nih!</div>';
+      return;
+    }
+    
+    var html = '';
+    data.forEach(function(item) {
+      var safeInd = item.indikator.replace(/'/g, "\\'"); 
+      
+      html += '<div style="background:#1e293b; padding:16px; border-radius:10px; border:1px solid #334155; box-shadow:0 4px 6px rgba(0,0,0,0.2);">' +
+                '<div style="display:flex; justify-content:space-between; margin-bottom:8px;">' +
+                  '<span style="font-size:12px; color:#fbbf24; font-weight:bold; background:#451a03; padding:2px 8px; border-radius:4px;">' + item.tanggal + '</span>' +
+                  '<span style="font-size:12px; color:#94a3b8; font-weight:bold;">' + item.ruangan + '</span>' +
+                '</div>' +
+                '<div style="font-weight:bold; color:#f8fafc; margin-bottom:8px; font-size:15px; line-height:1.3;">' + item.indikator + '</div>' +
+                '<div style="font-size:13px; color:#cbd5e1; margin-bottom:12px; background:#0f172a; padding:8px; border-radius:6px;">' +
+                   'Hasil Ruangan ➔ <b>Num:</b> ' + item.numerator + ' | <b>Den:</b> ' + item.denominator + '<br>' +
+                   '<span style="font-size:11px; color:#94a3b8;">Diisi oleh: ' + (item.pic || '-') + '</span>' +
+                '</div>' +
+                '<button onclick="openValModal('+item.rowIndex+', \''+item.tanggal+'\', \''+item.ruangan+'\', \''+safeInd+'\')" style="width:100%; padding:10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:13px;">Proses Validasi Data</button>' +
+              '</div>';
+    });
+    container.innerHTML = html;
+  }).getPendingValidations();
+}
+
+function openValModal(rowIndex, tanggal, ruangan, indikator) {
+  document.getElementById('valRowIndex').value = rowIndex;
+  document.getElementById('valModalTitle').innerText = ruangan + ' • ' + tanggal;
+  document.getElementById('valModalSubtitle').innerText = indikator;
+  
+  document.getElementById('valPopulasi').value = '';
+  document.getElementById('valSampel').value = '';
+  document.getElementById('valNumSampel').value = '';
+  document.getElementById('valLink').value = '';
+  document.getElementById('valCatatan').value = '';
+  
+  document.getElementById('valModal').style.display = 'block';
+}
+
+function doSubmitVal(status) {
+  var payload = {
+    rowIndex: document.getElementById('valRowIndex').value,
+    status: status,
+    populasi: document.getElementById('valPopulasi').value,
+    sampel: document.getElementById('valSampel').value,
+    numSampel: document.getElementById('valNumSampel').value,
+    link: document.getElementById('valLink').value,
+    catatan: document.getElementById('valCatatan').value
+  };
+
+  document.getElementById('valModal').style.display = 'none';
+  var container = document.getElementById('valListContainer');
+  container.innerHTML = '<div style="color:#fbbf24; text-align:center; padding:20px;">Menyimpan status validasi...</div>';
+
+  google.script.run.withSuccessHandler(function(res) {
+    if(res.success) {
+      loadPendingValidations(); 
+    } else {
+      alert(res.message);
+      loadPendingValidations();
+    }
+  }).saveValidation(payload);
+}
+</script>
 </body>
 </html>
+    
 
