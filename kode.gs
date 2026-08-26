@@ -2,93 +2,9 @@
  * =================================================================
  * SISTEM INPUT IMPRS (INDIKATOR MUTU PRIORITAS RS) - BERBASIS DATA MASTER
  * =================================================================
- * Cara pakai singkat:
- * 1. Buka Google Sheet rekap kamu (atau bikin Sheet baru khusus sistem ini).
- * 2. Buat 2 sheet baru dengan nama PERSIS seperti ini:
- *    - "Config"       -> berisi daftar ruangan & indikator
- *    - "Data Master"  -> tempat semua data harian tersimpan (jangan diisi manual)
- * 3. Buka menu Extensions > Apps Script, hapus isi default, lalu paste file ini.
- * 4. Buat file HTML baru bernama "Form" (File > New > HTML), paste isi Form.html.
- * 5. Klik Deploy > New deployment > pilih tipe "Web app".
- *    - Execute as: Me
- *    - Who has access: Anyone
- * 6. Copy link web app yang dihasilkan, bagikan ke semua PIC ruangan
- *    (tambahkan ?ruangan=NAMARUANGAN di belakang link untuk mengunci ruangan).
- * =================================================================
  */
 
-/**
- * =================================================================
- * DAFTAR ISI FUNGSI — buat cari cepat kalau ada masalah
- * =================================================================
- * Ctrl+F nama fungsinya di kotak pencarian editor buat langsung loncat.
- *
- * -- SETUP AWAL (jalankan manual 1x kalau bikin sheet baru) --
- * setupSheets()            -> bikin sheet Config & Data Master otomatis
- * setupUsers()              -> bikin sheet Users + akun default tiap ruangan
- *
- * -- WEB APP & LOGIN --
- * doGet()                   -> dipanggil otomatis saat link web app dibuka
- * login(username, password) -> cek username/password waktu orang login
- *
- * -- BACA DATA BUAT FORM --
- * getRooms()                 -> ambil daftar ruangan (buat dropdown)
- * getIndicatorDetails()      -> ambil daftar indikator + keterangan + target
- *                               + TIPE (persen atau hitungan)
- * getExistingEntries()       -> cek data yg SUDAH ada (buat Mode Edit di form)
- *
- * -- SIMPAN DATA --
- * submitData(payload)        -> dipanggil pas PIC klik "Simpan Data"
- *                               (kalau data sudah ada, ditimpa bukan dobel)
- *
- * -- REKAP & LAPORAN --
- * getRecap()                 -> rekap 1 ruangan (harian/mingguan/bulanan)
- *                               otomatis beda cara hitung buat indikator
- *                               tipe "persen" vs tipe "hitungan"
- * getRecapMatrix()            -> rekap SEMUA ruangan sekaligus (fitur admin)
- * getMissingRooms()           -> cek ruangan yg belum isi data bulan tertentu
- * computeReportData()         -> hitung data buat bikin grafik laporan PPT
- * buildPptPresentation()      -> LANGKAH 1 bikin laporan PPT (bikin slide+grafik)
- * exportPresentationToPptx()  -> LANGKAH 2 bikin laporan PPT (export ke file)
- *
- * -- EXPORT FILE --
- * buildFormattedSheet()       -> siapin sheet sementara yg rapi buat export
- * exportSheetAs()              -> proses export sheet sementara jadi PDF/Excel
- * exportRecapPdf()              -> tombol "Unduh PDF" di tab Lihat Rekap
- * exportRecapExcel()             -> tombol "Unduh Excel" di tab Lihat Rekap
- *
- * -- FUNGSI BANTUAN (dipakai fungsi lain, jarang perlu disentuh) --
- * normText(s)                 -> "membersihkan" teks sebelum dibandingkan,
- *                                 dipakai di HAMPIR SEMUA fungsi di atas biar
- *                                 nama ruangan/indikator yg beda spasi/huruf
- *                                 besar-kecil tetap dianggap sama
- *
- * -- KHUSUS DIAGNOSA (boleh diabaikan kalau semua normal) --
- * testGeneratePptReport()          -> tes bikin PPT langsung dari editor
- * testGeneratePptReportKeepFile()  -> sama, tapi file Slides-nya disimpan
- *                                     (buat cek manual kalau PPT kosong lagi)
- *
- * -- PANDUAN "ADA MASALAH DI MANA, CEK FUNGSI APA" --
- * "Rekap kosong padahal data ada"     -> cek getRecap() atau getRecapMatrix()
- * "Login gagal"                        -> cek login() dan sheet Users
- * "Data ganda / numpuk"                 -> cek submitData() bagian upsert
- * "Mode Edit tapi kolom kosong"          -> cek getExistingEntries() DAN
- *                                          bagian loadExisting() di Form.html
- *                                          (dua-duanya harus samakan cara
- *                                          "membersihkan" teksnya)
- * "PPT kosong/gagal"                    -> cek buildPptPresentation() dan
- *                                          exportPresentationToPptx()
- * "Target/Status salah di rekap"         -> cek sheet Config kolom Target
- * "Indikator hitungan (MOU/penelitian)
- *  ikut dianggap persen"                 -> cek sheet Config kolom Tipe,
- *                                          harus persis tertulis "hitungan"
- * =================================================================
- */
-// =================================================================
-// KONFIGURASI FOLDER ARSIP (WAJIB DIISI)
-// =================================================================
 const ARCHIVE_FOLDER_ID = '1AzWvvP_Lo6TBWR06TGHFDsFkT1J5ET5n';
-// =================================================================
 
 function autoArchiveTahunan() {
   const prevYear = new Date().getFullYear() - 1;
@@ -171,36 +87,18 @@ const CONFIG_SHEET_NAME = 'Config';
 const DATA_SHEET_NAME = 'Data Master';
 const USERS_SHEET_NAME = 'Users';
 
-// Header kolom di sheet "Data Master". JANGAN diubah urutannya
-// tanpa menyesuaikan kode di bawah.
 const DATA_HEADERS = ['Timestamp', 'Tanggal', 'Ruangan', 'Indikator', 'Numerator', 'Denominator', 'Diisi Oleh', 'Keterangan', 'Status Validasi', 'Populasi', 'Sampel', 'Num Sampel', 'Link Bukti', 'Catatan Validator'];
 
-// Indikator yang arah targetnya kebalik: target itu batas MAKSIMAL,
-// bukan minimal. (IMPRS saat ini belum ada, tapi disiapkan kalau nanti perlu.)
 const REVERSE_INDICATOR_NAMES = [];
 
-/**
- * Membersihkan teks sebelum dibandingkan — membuang SEMUA karakter
- * selain huruf dan angka (termasuk spasi biasa, spasi ganda, dan
- * karakter tak terlihat yang kadang kebawa dari copy-paste), lalu
- * menyamakan ke huruf besar. Ini paling aman untuk mencocokkan nama
- * ruangan/indikator walau ketikannya sedikit beda.
- */
 function normText(s) {
   return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-/**
- * Menyeragamkan tampilan nama (misal "novi" atau "NOVI" jadi "Novi"),
- * dipakai buat nampilin daftar nama PIC di rekap supaya nama yang sama
- * (beda huruf besar/kecil) nggak keitung dobel/beda.
- */
 function titleCase(s) {
   return String(s || '').trim().toLowerCase().replace(/(^|\s)\S/g, function (c) { return c.toUpperCase(); });
 }
 
-// Daftar indikator IMPRS. tipe: 'persen' (Numerator/Denominator jadi %)
-// atau 'hitungan' (cukup 1 angka, dibanding target angka langsung).
 const INDICATOR_DETAILS = [
   {
     nama: 'Kepatuhan Identifikasi Pasien NAPZA oleh Petugas',
@@ -302,24 +200,12 @@ const INDICATOR_DETAILS = [
   }
 ];
 
-/**
- * Dipanggil otomatis saat web app dibuka lewat link.
- * Sekarang semua orang (PIC maupun admin) pakai 1 link yang sama —
- * ruangan/peran ditentukan lewat login, bukan lewat parameter URL lagi.
- */
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Form')
     .setTitle('Input Data IMPRS')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-/**
- * Jalankan fungsi ini SEKALI untuk membuat sheet "Users" dan mengisi
- * akun default: 1 akun per ruangan + 1 akun admin.
- * Username dibuat otomatis dari nama ruangan (huruf kecil, tanpa spasi).
- * Password default disamakan dulu, WAJIB diganti manual nanti di sheet
- * Users kolom B setelah dibagikan ke tiap ruangan.
- */
 function setupUsers() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let usersSheet = ss.getSheetByName(USERS_SHEET_NAME);
@@ -327,7 +213,7 @@ function setupUsers() {
     usersSheet = ss.insertSheet(USERS_SHEET_NAME);
   }
   if (usersSheet.getLastRow() > 0) {
-    Logger.log('Sheet Users sudah ada isinya, tidak ditimpa. Hapus manual dulu kalau mau reset ulang.');
+    Logger.log('Sheet Users sudah ada isinya, tidak ditimpa.');
     return;
   }
 
@@ -347,10 +233,6 @@ function setupUsers() {
   usersSheet.getRange(2, 1, rows.length, 4).setValues(rows);
 }
 
-/**
- * Dipanggil dari Form.html saat orang login. Mencocokkan username +
- * password ke sheet Users (tidak peka besar/kecil huruf untuk username).
- */
 function login(username, password) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(USERS_SHEET_NAME);
   const lastRow = sheet.getLastRow();
@@ -370,10 +252,6 @@ function login(username, password) {
   return { success: false, message: 'Username atau password salah.' };
 }
 
-/**
- * Jalankan fungsi ini SEKALI secara manual (kalau sheet Config/Data Master
- * belum pernah dibuat sama sekali) untuk membuat semuanya otomatis.
- */
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -412,14 +290,12 @@ function setupSheets() {
   }
 }
 
-/** Dipanggil dari Form.html untuk mengisi dropdown ruangan. */
 function getRooms() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
   const values = sheet.getRange('A2:A' + sheet.getLastRow()).getValues().flat().filter(String);
   return values;
 }
 
-/** Dipanggil dari Form.html untuk mengisi nama + keterangan tiap indikator. */
 function getIndicatorDetails() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
   const lastRow = sheet.getLastRow();
@@ -433,11 +309,6 @@ function getIndicatorDetails() {
     });
 }
 
-/**
- * Dipanggil dari Form.html untuk mengambil data yang sudah pernah
- * diisi (kalau ada) untuk ruangan + tanggal tertentu, supaya bisa diedit
- * atau ditampilkan di rekap harian.
- */
 function getExistingEntries(ruangan, tanggal) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
   const targetYear = new Date(tanggal).getFullYear();
@@ -453,37 +324,6 @@ function getExistingEntries(ruangan, tanggal) {
   return result;
 }
 
-/**
- * Dipanggil dari Form.html tab "Lihat Rekap" (mode Bulanan) untuk
- * menampilkan total Numerator/Denominator/Hasil per indikator.
- */
-function getMonthlyRecap(ruangan, bulan, tahun) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return [];
-  const data = sheet.getRange(2, 1, lastRow - 1, DATA_HEADERS.length).getValues();
-  const totals = {};
-  data.forEach(function (row) {
-    const tgl = new Date(row[1]);
-    if (row[2] === ruangan && (tgl.getMonth() + 1) === Number(bulan) && tgl.getFullYear() === Number(tahun)) {
-      const ind = row[3];
-      if (!totals[ind]) totals[ind] = { numerator: 0, denominator: 0 };
-      totals[ind].numerator += Number(row[4]) || 0;
-      totals[ind].denominator += Number(row[5]) || 0;
-    }
-  });
-  return Object.keys(totals).map(function (ind) {
-    const t = totals[ind];
-    const hasil = t.denominator > 0 ? (t.numerator / t.denominator * 100) : null;
-    return { indikator: ind, numerator: t.numerator, denominator: t.denominator, hasil: hasil };
-  });
-}
-
-/**
- * Menyimpan data yang dikirim dari form. Kalau data untuk
- * ruangan+tanggal+indikator yang sama sudah pernah diisi, baris lama
- * akan DIPERBARUI (bukan menumpuk duplikat).
- */
 function submitData(payload) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
   const lastRow = sheet.getLastRow();
@@ -510,7 +350,6 @@ function submitData(payload) {
       }
     }
 
-    // PIC input, otomatis diset Menunggu, dan sisa kolom validasi dikosongkan
     const rowValues = [
       now, 
       new Date(tanggal), 
@@ -535,18 +374,6 @@ function submitData(payload) {
   return { status: 'ok', message: 'Data tersimpan.' };
 }
 
-/**
- * Fungsi rekap terpadu, dipakai tab "Lihat Rekap".
- * ruangan: nama ruangan tertentu, ATAU 'SEMUA' untuk gabungan semua ruangan (Total RS).
- * mode: 'harian' | 'mingguan' | 'bulanan'
- * params: { tanggal } untuk harian, { bulan, tahun, minggu } untuk mingguan,
- *         { bulan, tahun } untuk bulanan.
- * minggu 1 = tanggal 1-7, minggu 2 = tanggal 8-14, minggu 3 = tanggal 15-21, minggu 4 = tanggal 22-31.
- */
-/**
- * Buat admin: rekap SEMUA ruangan sekaligus dalam 1 tabel, tiap ruangan
- * jadi kolom terpisah (bukan digabung jadi 1 angka total).
- */
 function getRecapMatrix(mode, params) {
   const dataSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
   const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
@@ -629,7 +456,6 @@ function getRecap(ruangan, mode, params) {
     targetMap[normText(r[0])] = (r[3] === '' || r[3] === undefined) ? null : Number(r[3]);
     tipeMap[normText(r[0])] = r[4] || 'persen';
   });
-  // Indikator persen yang arah targetnya kebalik: target itu batas MAKSIMAL, bukan minimal.
   const REVERSE_INDICATORS = REVERSE_INDICATOR_NAMES.map(normText);
 
   let targetYear;
@@ -702,11 +528,6 @@ function getRecap(ruangan, mode, params) {
     });
 }
 
-/**
- * Menghitung data laporan untuk rentang tanggal bebas, digabung dari
- * SEMUA ruangan, dipecah otomatis per minggu (kalau rentang pendek)
- * atau per bulan (kalau rentang panjang).
- */
 function computeReportData(startDateStr, endDateStr) {
   const dataSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
   const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
@@ -726,8 +547,6 @@ function computeReportData(startDateStr, endDateStr) {
 
   const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
 
-  // Mode Triwulan 1: kalau rentang persis 1 Jan - 31 Mar tahun yang sama,
-  // dipecah per minggu. Laporan tahunan penuh (1 Jan - 31 Des) TETAP per bulan.
   const isQ1Only = startDate.getMonth() === 0 && startDate.getDate() === 1 &&
     endDate.getMonth() === 2 && endDate.getDate() >= 28 &&
     startDate.getFullYear() === endDate.getFullYear();
@@ -808,10 +627,6 @@ function computeReportData(startDateStr, endDateStr) {
   });
 }
 
-/**
- * Langkah 1: bikin presentasi Slides lengkap dengan semua slide & grafik.
- * TIDAK export ke PPT di sini, dan file BELUM dihapus.
- */
 function buildPptPresentation(startDateStr, endDateStr) {
   const reportData = computeReportData(startDateStr, endDateStr);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -820,38 +635,28 @@ function buildPptPresentation(startDateStr, endDateStr) {
   const presTitle = 'Laporan Indikator Mutu ' + startDateStr + ' sd ' + endDateStr;
   const pres = SlidesApp.create(presTitle);
 
-  // ====================================================
-    // 1. SLIDE JUDUL (DESAIN ELEGAN + LOGO AMINO)
-    // ====================================================
     const titleSlide = pres.getSlides()[0];
     titleSlide.getShapes().forEach(function (sh) {
       try { sh.remove(); } catch (e) { /* ignore */ }
     });
     
-    // Bikin background jadi warna biru gelap elegan khas tema dark
     titleSlide.getBackground().setSolidFill('#0f172a'); 
-    
     const pageWidth = pres.getPageWidth();
     
-    // --- MASUKKAN LOGO AMINO ---
     try {
-      // GANTI TEKS DI BAWAH DENGAN ID FILE LOGO AMINO DI DRIVE KAMU
       const logoBlob = DriveApp.getFileById('1Ityk6FqSmCIm7ij-SEgtCju_pLgnGz1B').getBlob(); 
       const logoImg = titleSlide.insertImage(logoBlob);
       logoImg.setWidth(130).setHeight(130);
-      logoImg.setLeft((pageWidth - 130) / 2); // Auto tengah
+      logoImg.setLeft((pageWidth - 130) / 2); 
       logoImg.setTop(45);
     } catch(e) {
       Logger.log("Logo tidak ditemukan/ID salah: " + e.message);
     }
 
-    // --- JUDUL LAPORAN (DIBUAT 2 BARIS BIAR NGGAK NABRAK) ---
-    // Lebar dibatasi (pageWidth - 80) supaya margin kanan-kiri pas
     const titleBox = titleSlide.insertTextBox('LAPORAN INDIKATOR MUTU PRIORITAS RS (IMPRS)', 40, 200, pageWidth - 80, 100);
     titleBox.getText().getTextStyle().setFontSize(32).setBold(true).setForegroundColor('#ffffff');
     titleBox.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
     
-    // --- FORMAT TANGGAL ---
     const dStart = new Date(startDateStr);
     const dEnd = new Date(endDateStr);
     const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -885,13 +690,10 @@ function buildPptPresentation(startDateStr, endDateStr) {
       .setPosition(headerRow, 6, 0, 0);
 
     // KODE TAMBAHAN: Paksa sumbu Y mulai dari 0.
-    // Jika targetnya persis 100, batas atas jadi 110 biar ada ruang lega di atas.
-    if (ind.target == 100) {
-      chartBuilder.setOption('vAxis.viewWindow.min', 0);
-      chartBuilder.setOption('vAxis.viewWindow.max', 110);
-    } else {
-      // Untuk indikator lain, tetap paksa mulai dari 0
-      chartBuilder.setOption('vAxis.viewWindow.min', 0);
+    // Jika indikator berupa persen, batas atas dikunci di 100.
+    chartBuilder.setOption('vAxis.viewWindow.min', 0);
+    if (ind.tipe === 'persen') {
+      chartBuilder.setOption('vAxis.viewWindow.max', 100);
     }
 
     const chart = chartBuilder.build();
@@ -903,9 +705,6 @@ function buildPptPresentation(startDateStr, endDateStr) {
 
     const slide = pres.appendSlide(SlidesApp.PredefinedLayout.BLANK);
 
-    // ====================================================
-    // KODE UKURAN LAYAR YANG KEMARIN HILANG (WAJIB ADA)
-    // ====================================================
     const pageWidth = pres.getPageWidth();
     const pageHeight = pres.getPageHeight();
     const margin = 20;
@@ -917,15 +716,11 @@ function buildPptPresentation(startDateStr, endDateStr) {
     const noteBoxTop = pageHeight - bottomMargin - noteBoxHeight;
     const chartHeight = noteBoxTop - gapBeforeNote - chartTop;
 
-    // ====================================================
-    // KODE BANNER ATAS (TINGGI DIKUNCI 60)
-    // ====================================================
     const leftBannerWidth = 100;
     const targetBannerWidth = 150;
     const centerBannerWidth = contentWidth - leftBannerWidth - targetBannerWidth;
     const bannerHeight = 60;
 
-    // Banner Kiri (IMPRS)
     const bannerLeft = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin, 15, leftBannerWidth, bannerHeight);
     bannerLeft.getFill().setSolidFill('#4a86c8');
     bannerLeft.getBorder().setTransparent();
@@ -934,7 +729,6 @@ function buildPptPresentation(startDateStr, endDateStr) {
     bannerLeft.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
     bannerLeft.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
 
-    // Banner Tengah (Judul Indikator)
     const bannerCenter = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin + leftBannerWidth, 15, centerBannerWidth, bannerHeight);
     bannerCenter.getFill().setSolidFill('#6fa8dc');
     bannerCenter.getBorder().setTransparent();
@@ -943,7 +737,6 @@ function buildPptPresentation(startDateStr, endDateStr) {
     bannerCenter.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
     bannerCenter.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
 
-    // Banner Kanan (Target Merah)
     const isReverse = REVERSE_INDICATOR_NAMES.map(normText).indexOf(normText(ind.nama)) > -1;
     let targetValText = '-';
     if (ind.target !== null && ind.target !== undefined && ind.target !== '') {
@@ -982,12 +775,6 @@ function buildPptPresentation(startDateStr, endDateStr) {
   };
 }
 
-/**
- * Langkah 2: export presentasi yang sudah jadi (dari buildPptPresentation)
- * ke format PPTX, lalu bersihkan file & sheet sementaranya. Dipanggil
- * terpisah beberapa detik setelah langkah 1 supaya Google sempat
- * "menyimpan" presentasinya secara utuh dulu sebelum di-export.
- */
 function exportPresentationToPptx(presId, filename, tempSheetName) {
   const url = 'https://www.googleapis.com/drive/v3/files/' + presId +
     '/export?mimeType=' + encodeURIComponent('application/vnd.openxmlformats-officedocument.presentationml.presentation');
@@ -1003,7 +790,7 @@ function exportPresentationToPptx(presId, filename, tempSheetName) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tempSheet = ss.getSheetByName(tempSheetName);
   if (tempSheet) ss.deleteSheet(tempSheet);
-  try { DriveApp.getFileById(presId).setTrashed(true); } catch (e) { /* ignore kalau gagal hapus */ }
+  try { DriveApp.getFileById(presId).setTrashed(true); } catch (e) {}
 
   if (responseCode !== 200) {
     throw new Error('Gagal export PPT (kode ' + responseCode + '). Coba lagi.');
@@ -1015,18 +802,12 @@ function exportPresentationToPptx(presId, filename, tempSheetName) {
   };
 }
 
-
-/**
- * Cek ruangan mana saja yang SAMA SEKALI belum ada data di bulan/tahun
- * tertentu (belum submit sama sekali, bukan cuma sebagian indikator).
- */
 function getMissingRooms(bulan, tahun) {
   const configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
   const lastConfigRow = configSheet.getLastRow();
   const allRooms = configSheet.getRange('A2:A' + lastConfigRow).getValues().flat().filter(String);
 
   const dataSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
-  const lastDataRow = dataSheet.getLastRow();
   const roomsWithData = {};
 
   const rawData = getRawDataByYears(Number(tahun), Number(tahun));
@@ -1040,117 +821,6 @@ function getMissingRooms(bulan, tahun) {
   return allRooms.filter(function (room) { return !roomsWithData[normText(room)]; });
 }
 
-/**
- * DIAGNOSA: jalankan fungsi ini langsung dari editor Apps Script
- * (pilih di dropdown fungsi, klik Jalankan) untuk tes bikin PPT tanpa
- * lewat web app. Setelah selesai, buka "Log eksekusi" untuk lihat
- * detail prosesnya dan cek apakah ada error.
- */
-function testGeneratePptReport() {
-  Logger.log('Mulai tes...');
-  try {
-    const built = buildPptPresentation('2026-01-01', '2026-12-31');
-    Logger.log('Slide selesai dibuat. presId: ' + built.presId);
-    Utilities.sleep(8000);
-
-    const url = 'https://www.googleapis.com/drive/v3/files/' + built.presId +
-      '/export?mimeType=' + encodeURIComponent('application/vnd.openxmlformats-officedocument.presentationml.presentation');
-    const token = ScriptApp.getOAuthToken();
-    const response = UrlFetchApp.fetch(url, {
-      headers: { Authorization: 'Bearer ' + token },
-      muteHttpExceptions: true
-    });
-
-    Logger.log('Response code: ' + response.getResponseCode());
-    Logger.log('Response headers: ' + JSON.stringify(response.getHeaders()));
-    const contentType = response.getHeaders()['Content-Type'] || response.getHeaders()['content-type'] || '';
-    Logger.log('Content-Type: ' + contentType);
-
-    if (contentType.indexOf('text') > -1 || contentType.indexOf('html') > -1 || contentType.indexOf('json') > -1) {
-      Logger.log('ISI RESPONSE (kemungkinan error, bukan file PPT): ' + response.getContentText().substring(0, 1000));
-    } else {
-      Logger.log('Content-Type terlihat seperti file biner (kemungkinan pptx beneran). Ukuran: ' + response.getBlob().getBytes().length + ' bytes.');
-    }
-
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const tempSheet = ss.getSheetByName(built.tempSheetName);
-    if (tempSheet) ss.deleteSheet(tempSheet);
-    DriveApp.getFileById(built.presId).setTrashed(true);
-  } catch (err) {
-    Logger.log('GAGAL dengan error: ' + err.message);
-    Logger.log('Detail: ' + err.stack);
-  }
-}
-
-/**
- * DIAGNOSA LANJUTAN: sama seperti generatePptReport, tapi file Google
- * Slides sementaranya TIDAK dihapus, supaya bisa dibuka manual dan
- * dicek langsung apakah slide & grafiknya beneran ada atau kosong.
- * Setelah selesai, cek Log eksekusi untuk link-nya, buka link itu.
- * INGAT: hapus manual file ini nanti dari Drive setelah selesai dicek.
- */
-function testGeneratePptReportKeepFile() {
-  const reportData = computeReportData('2026-01-01', '2026-12-31');
-  Logger.log('Jumlah indikator: ' + reportData.length);
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const tempSheet = ss.insertSheet('TempChartDiag_' + new Date().getTime());
-  const pres = SlidesApp.create('DIAGNOSA_Laporan_' + new Date().getTime());
-
-  const titleSlide = pres.getSlides()[0];
-  titleSlide.getShapes().forEach(function (sh) {
-    try { sh.remove(); } catch (e) { Logger.log('Gagal hapus shape judul: ' + e.message); }
-  });
-  titleSlide.insertTextBox('LAPORAN INDIKATOR MUTU (DIAGNOSA)', 40, 180, 860, 80);
-
-  let chartRow = 1;
-  reportData.forEach(function (ind, idx) {
-    try {
-      const headerRow = chartRow;
-      tempSheet.getRange(headerRow, 1, 1, 3).setValues([['Periode', 'Hasil (%)', 'Target (%)']]);
-      const rows = ind.buckets.map(function (b) { return [b.label, b.hasil, ind.target]; });
-      tempSheet.getRange(headerRow + 1, 1, rows.length, 3).setValues(rows);
-
-      const dataRange = tempSheet.getRange(headerRow, 1, rows.length + 1, 3);
-      const chart = tempSheet.newChart().asLineChart().addRange(dataRange).setNumHeaders(1)
-        .setOption('title', ind.nama).setPosition(headerRow, 6, 0, 0).build();
-      tempSheet.insertChart(chart);
-      SpreadsheetApp.flush();
-
-      const chartsOnSheet = tempSheet.getCharts();
-      const embeddedChart = chartsOnSheet[chartsOnSheet.length - 1];
-
-      const slide = pres.appendSlide(SlidesApp.PredefinedLayout.BLANK);
-      const pageWidth = pres.getPageWidth();
-    const pageHeight = pres.getPageHeight();
-    const margin = 20;
-    const contentWidth = pageWidth - margin * 2;
-    
-    const bottomMargin = 20;
-    const noteBoxHeight = 60;
-    const gapBeforeNote = 15;
-    const chartTop = 85; // Jarak atas disesuaikan biar chart gak nabrak banner
-    const noteBoxTop = pageHeight - bottomMargin - noteBoxHeight;
-    const chartHeight = noteBoxTop - gapBeforeNote - chartTop;
-      slide.insertTextBox(ind.nama, 20, 15, 900, 40);
-      slide.insertSheetsChart(embeddedChart, 20, 65, 520, 300);
-
-      chartRow += rows.length + 3;
-      Logger.log('Slide ke-' + (idx + 2) + ' (' + ind.nama + ') berhasil dibuat.');
-    } catch (err) {
-      Logger.log('GAGAL bikin slide untuk "' + ind.nama + '": ' + err.message);
-    }
-  });
-
-  Logger.log('Jumlah slide akhir: ' + pres.getSlides().length);
-  Logger.log('BUKA LINK INI BUAT CEK MANUAL: https://docs.google.com/presentation/d/' + pres.getId() + '/edit');
-  Logger.log('Setelah dicek, hapus manual file ini dan sheet "' + tempSheet.getName() + '" ya.');
-}
-
-/**
- * Bikin sheet sementara yang sudah diformat rapi (judul, garis tabel,
- * rata tengah) untuk dipakai export PDF maupun Excel.
- */
 function buildFormattedSheet(title, headers, rows) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const tempSheet = ss.insertSheet('TempExport_' + new Date().getTime());
@@ -1235,23 +905,7 @@ function resetPassword(username, ruangan) {
   }
   return { success: false, message: 'Gagal: Username tidak ditemukan.' };
 }
-function changePassword(oldPass, newPass) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(USERS_SHEET_NAME);
-  const data = sheet.getDataRange().getValues();
-  const user = Session.getActiveUser().getEmail() || "admin"; // Sesuaikan jika pakai login manual
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] == user) {
-      if (String(data[i][1]) == String(oldPass)) {
-        sheet.getRange(i + 1, 2).setValue(newPass);
-        return { success: true, message: "Password berhasil diubah!" };
-      }
-      return { success: false, message: "Password lama salah!" };
-    }
-  }
-  return { success: false, message: "User tidak ditemukan." };
-}
+
 function changePassword(username, oldPass, newPass) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(USERS_SHEET_NAME);
@@ -1274,29 +928,25 @@ function changePassword(username, oldPass, newPass) {
 function cekDanArsipOtomatis() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    // Membaca nama sheet master
     const sheet = ss.getSheetByName(DATA_SHEET_NAME); 
     if (!sheet) return;
 
     const lastRow = sheet.getLastRow();
     if (lastRow < 2) return;
 
-    // Mengambil semua data 'Tanggal' yang ada di kolom B (kolom ke-2)
     const dateValues = sheet.getRange(2, 2, lastRow - 1, 1).getValues();
     const currentYear = new Date().getFullYear();
     let yearsToArchive = [];
 
-    // Deteksi apakah ada data yang BUKAN tahun ini (tahun lalu atau tahun depan)
     dateValues.forEach(row => {
       if (row[0]) {
         const y = new Date(row[0]).getFullYear();
         if (y !== currentYear && yearsToArchive.indexOf(y) === -1) {
-          yearsToArchive.push(y); // Catat tahun yang nyasar
+          yearsToArchive.push(y);
         }
       }
     });
 
-    // Jika ketemu data tahun lain, jalankan fungsi arsip untuk memindahkannya detik itu juga!
     yearsToArchive.forEach(y => {
       archiveData(y);
     });
@@ -1306,16 +956,11 @@ function cekDanArsipOtomatis() {
   }
 }
 
-/**
- * Mengambil daftar data yang statusnya masih "Menunggu"
- * Dipanggil dari menu khusus Validator
- */
 function getPendingValidations(username) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName('Data Master');
   var data = sheet.getDataRange().getValues();
   
-  // Baca pengaturan Config untuk nge-cek jatah indikator tiap Validator
   var sheetConfig = ss.getSheetByName('Config');
   var configData = sheetConfig.getDataRange().getValues();
   var headerConfig = configData[0];
@@ -1333,57 +978,162 @@ function getPendingValidations(username) {
     }
   }
 
-  var pending = [];
-  var header = data[0];
-  var idxStatus = header.indexOf('Status Validasi');
-  if(idxStatus === -1) idxStatus = 8; // Default indeks ke-8
-
   var usr = username ? username.toString().trim().toLowerCase() : "";
+  var pendingGroups = {};
+  var pendingArray = [];
 
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
-    if (row[idxStatus] === '⏳ Menunggu') {
+    var statusStr = row[8] ? row[8].toString().trim() : "";
+    
+    // Tarik data yang masih nunggu atau kosong
+    if (statusStr === '⏳ Menunggu' || statusStr === '') {
       var indName = row[3] ? row[3].toString().trim() : "";
       var hakVal = valMap[indName] || "";
       
-      // LOGIKA FILTER: Jika validator cocok dengan config ATAU user adalah admin, maka tampilkan
       if (hakVal === usr || usr === 'admin') {
-        pending.push({
-          rowIndex: i + 1,
-          tanggal: Utilities.formatDate(new Date(row[1]), Session.getScriptTimeZone(), "dd-MM-yyyy"),
-          ruangan: row[2],
-          indikator: indName,
-          numerator: row[4],
-          denominator: row[5],
-          pic: row[6]
-        });
+        var tglRaw = row[1];
+        var monthYear = "";
+        
+        // Konversi tanggal jadi format "Bulan Tahun" (misal: Agustus 2026)
+        if (tglRaw && tglRaw instanceof Date) {
+          var months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+          monthYear = months[tglRaw.getMonth()] + " " + tglRaw.getFullYear();
+        } else if (tglRaw) {
+          monthYear = tglRaw.toString();
+        }
+
+        var ruangan = row[2] ? row[2].toString().trim() : "";
+        
+        // Bikin kunci grup biar data di bulan, ruangan, dan indikator yang sama jadi 1 kartu
+        var key = monthYear + "_" + ruangan + "_" + indName;
+        
+        if (!pendingGroups[key]) {
+          pendingGroups[key] = {
+            periode: monthYear,
+            ruangan: ruangan,
+            indikator: indName,
+            numerator: 0,
+            denominator: 0,
+            rowIndexes: [] // Menyimpan semua baris data hariannya
+          };
+        }
+        
+        pendingGroups[key].numerator += (Number(row[4]) || 0);
+        pendingGroups[key].denominator += (Number(row[5]) || 0);
+        pendingGroups[key].rowIndexes.push(i + 1);
       }
     }
   }
   
-  pending.reverse(); // Urutkan biar tugas terbaru di atas
-  return pending;
+  for (var k in pendingGroups) {
+    pendingArray.push(pendingGroups[k]);
+  }
+  
+  return pendingArray;
 }
 
-/**
- * Menyimpan data hasil inputan dari tim Validator ke Master
- */
 function saveValidation(payload) {
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data Master');
+    const rowIndexes = payload.rowIndexes; // Array baris dari sebulan penuh
     
-    // Setel nilai ke kolom 9 (Status) sampai 14 (Catatan)
-    sheet.getRange(payload.rowIndex, 9, 1, 6).setValues([[
-      payload.status,
-      payload.populasi || '',
-      payload.sampel || '',
-      payload.numSampel || '',
-      payload.link || '',
-      payload.catatan || ''
-    ]]);
+    // Update semua baris harian dalam 1 kali proses loop
+    rowIndexes.forEach(function(rIndex) {
+      sheet.getRange(rIndex, 9, 1, 6).setValues([[
+        payload.status,
+        payload.populasi || '',
+        payload.sampel || '',
+        payload.numSampel || '',
+        payload.link || '',
+        payload.catatan || ''
+      ]]);
+    });
     
-    return { success: true, message: "Validasi berhasil disimpan!" };
+    return { success: true, message: "Validasi bulanan berhasil disimpan massal!" };
   } catch(e) {
     return { success: false, message: "Gagal menyimpan: " + e.message };
+  }
+}
+
+function downloadValidationReport(username, format) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var dataSheet = ss.getSheetByName('Data Master');
+  var data = dataSheet.getDataRange().getValues();
+  
+  var configSheet = ss.getSheetByName('Config');
+  var configData = configSheet.getDataRange().getValues();
+  var headerConfig = configData[0];
+  var idxInd = headerConfig.indexOf('Daftar Indikator');
+  var idxVal = headerConfig.indexOf('Username Validator');
+  
+  var valMap = {};
+  if(idxInd > -1 && idxVal > -1) {
+    for (var i = 1; i < configData.length; i++) {
+      var indikator = configData[i][idxInd];
+      var penilai = configData[i][idxVal];
+      if (indikator) {
+        valMap[indikator.toString().trim()] = penilai ? penilai.toString().trim().toLowerCase() : "";
+      }
+    }
+  }
+
+  var usr = username ? username.toString().trim().toLowerCase() : "";
+  var validatedGroups = {};
+  var rows = [];
+  
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var indName = row[3] ? row[3].toString().trim() : "";
+    var hakVal = valMap[indName] || "";
+    var statusStr = row[8] ? row[8].toString().trim() : "";
+    
+    // Cek data yang sudah tervalidasi
+    if ((hakVal === usr || usr === 'admin') && (statusStr === '✅ Valid' || statusStr === '❌ Kembalikan')) {
+        var tglRaw = row[1];
+        var monthYear = "";
+        
+        if (tglRaw && tglRaw instanceof Date) {
+          var months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+          monthYear = months[tglRaw.getMonth()] + " " + tglRaw.getFullYear();
+        } else if (tglRaw) {
+          monthYear = tglRaw.toString();
+        }
+        
+        var ruangan = row[2] ? row[2].toString().trim() : "";
+        var key = monthYear + "_" + ruangan + "_" + indName;
+
+        // Grupkan laporannya jadi bulanan juga biar rapi
+        if (!validatedGroups[key]) {
+          validatedGroups[key] = {
+            periode: monthYear,
+            ruangan: ruangan,
+            indikator: indName,
+            num: 0, den: 0,
+            status: statusStr,
+            populasi: row[9] || '-',
+            sampel: row[10] || '-',
+            numSampel: row[11] || '-',
+            link: row[12] || '-',
+            catatan: row[13] || '-'
+          };
+        }
+        validatedGroups[key].num += (Number(row[4]) || 0);
+        validatedGroups[key].den += (Number(row[5]) || 0);
+    }
+  }
+  
+  for(var k in validatedGroups) {
+     var vg = validatedGroups[k];
+     rows.push([vg.periode, vg.ruangan, vg.indikator, vg.num, vg.den, vg.status, vg.populasi, vg.sampel, vg.numSampel, vg.link, vg.catatan]);
+  }
+  
+  var title = 'Riwayat_Validasi_Bulanan_' + (usr || 'Semua');
+  var headers = ['Periode', 'Ruangan', 'Indikator', 'Total Num', 'Total Den', 'Status', 'Populasi', 'Sampel', 'Num Sampel', 'Link Bukti', 'Catatan'];
+  
+  if (format === 'pdf') {
+    return exportRecapPdf(title, headers, rows);
+  } else {
+    return exportRecapExcel(title, headers, rows);
   }
 }
