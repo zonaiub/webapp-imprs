@@ -273,7 +273,7 @@
     button:disabled { cursor: default; }
 
     /* =========================================================
-       ✨ OTOMATIS DARK MODE (Berdasarkan Setting HP/Laptop) ✨
+       ✨ OTOMATIS DARK MODE ✨
        ========================================================= */
     @media (prefers-color-scheme: dark) {
       :root {
@@ -307,7 +307,6 @@
         color: var(--primary-900);
       }
       
-      /* PERBAIKAN LOGO DI SINI: Paksa putih biar logo transparan tetep aman */
       .app-header img, #loginArea .login-logo img {
         background: #ffffff !important;
         padding: 6px;
@@ -331,7 +330,6 @@
       .indicator-title {
         color: var(--primary-900);
       }
-      /* Box Peringatan / Status Utama */
       #status.ok { background: #064e3b; color: #6ee7b7; }
       #status.error, #loginError { background: #7f1d1d; color: #fca5a5; }
       #status.info { background: #1e3a8a; color: #93c5fd; }
@@ -344,7 +342,6 @@
       }
       hr { border-top: 1px solid var(--border) !important; }
 
-      /* Override gaya inline agar ramah Dark Mode */
       div[style*="background:#f0f2f5"] { background: #1e293b !important; color: #cbd5e1 !important; border: 1px solid var(--border) !important; }
       div[style*="background:#fff3cd"] { background: #422006 !important; color: #fcd34d !important; border-color: #78350f !important; }
       tr.pic-row { background: #422006 !important; color: #fcd34d !important; }
@@ -376,7 +373,7 @@
 
     <button id="loginBtn" onclick="doLogin()">Login</button>
     <div id="loginError"></div>
-    <!-- TOMBOL & MODAL LUPA PASSWORD -->
+
     <p style="text-align:center; margin-top:16px; font-size:13px;">
       Lupa Password? <span onclick="showResetArea()" style="color:var(--primary-600); text-decoration:underline; font-weight:600; cursor:pointer;">Reset di sini</span>
     </p>
@@ -392,7 +389,6 @@
       <button onclick="hideResetArea()" style="width:100%; padding:10px; margin-top:8px; background:transparent; color:var(--ink-soft); border:1px solid var(--border); border-radius:8px; font-weight:600;">Batal</button>
       <div id="resetStatus" style="margin-top:12px; font-size:13px; text-align:center; font-weight:600;"></div>
     </div>
-
   </div>
 
   <div id="appWrap" style="display:none;">
@@ -400,8 +396,8 @@
       <div class="logo-fallback" id="headerLogoFallback">RS</div>
       <img id="headerLogoImg" style="display:none;" alt="Logo Rumah Sakit">
       <div>
-        <div class="app-title-main">IMPRS</div>
-        <div class="app-title-sub">Indikator Mutu Prioritas Rumah Sakit</div>
+        <div class="app-title-main" id="appTitle">IMPRS</div>
+        <div class="app-title-sub" id="appSubtitle">Indikator Mutu Prioritas Rumah Sakit</div>
       </div>
     </div>
 
@@ -410,9 +406,6 @@
       <span onclick="showPassModal()" style="cursor:pointer; color:var(--primary-600); font-weight:bold; margin-right:15px; text-decoration:underline;">Ganti Password</span>
       <button id="logoutBtn" onclick="doLogout()">Keluar</button>
     </div>
-
-    <h1>Input Data IMPRS</h1>
-    <p class="sub">Isi data harian ruangan kamu. Data otomatis tersimpan ke rekap.</p>
 
     <div id="loading">Memuat form...</div>
 
@@ -549,7 +542,7 @@
   </div>
   </div>
 
-  <!-- ========================================== -->
+<!-- ========================================== -->
 <!-- DASHBOARD KHUSUS TIM VALIDATOR             -->
 <!-- ========================================== -->
 <div id="validatorDashboard" style="display:none; padding:15px; max-width:800px; margin:0 auto;">
@@ -560,8 +553,17 @@
     </div>
     <button onclick="loadPendingValidations()" style="padding:10px 16px; background:#2563eb; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; font-size:13px; transition:0.2s; box-shadow:0 4px 6px rgba(0,0,0,0.3);">🔄 Refresh Data</button>
   </div>
+
+  <!-- KOTAK DOWNLOAD RIWAYAT -->
+  <div style="background:#1e293b; padding:16px; border-radius:10px; border:1px solid #334155; margin-bottom:20px; text-align:center;">
+    <h3 style="color:#f8fafc; margin-top:0; font-size:14px; margin-bottom:12px;">Unduh Riwayat Data yang Sudah Divalidasi</h3>
+    <div style="display:flex; gap:10px;">
+      <button id="btnValExcel" onclick="downloadValReport('excel')" style="flex:1; padding:10px; background:#137333; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px;">📊 Unduh Excel</button>
+      <button id="btnValPdf" onclick="downloadValReport('pdf')" style="flex:1; padding:10px; background:#c5221f; color:white; border:none; border-radius:8px; font-weight:bold; cursor:pointer; font-size:13px;">📄 Unduh PDF</button>
+    </div>
+    <div id="valDownloadStatus" style="font-size:12px; color:#fbbf24; margin-top:10px; font-weight:bold;"></div>
+  </div>
   
-  <!-- Tempat List Data Muncul -->
   <div id="valListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
 </div>
 
@@ -596,25 +598,31 @@
   </div>
   <button onclick="document.getElementById('valModal').style.display='none'" style="width:100%; padding:12px; background:transparent; color:#94a3b8; border:1px solid #475569; border-radius:8px; font-weight:bold; cursor:pointer;">Batal / Tutup</button>
 </div>
-   <!-- MODAL GANTI PASSWORD -->
+
+<!-- MODAL GANTI PASSWORD -->
 <div id="passModal" style="display:none; position:fixed; top:15%; left:50%; transform:translate(-50%, 0); width:90%; max-width:400px; background:#1e293b; padding:24px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.6); z-index:9999; border: 1px solid #334155;">
-  
   <h3 style="margin-top:0; margin-bottom:20px; color:#60a5fa; font-size:18px; font-weight:bold;">Ganti Password</h3>
-  
   <label style="font-size:13px; color:#e2e8f0; font-weight:600; display:block; margin-bottom:8px;">Username Kamu</label>
   <input type="text" id="gpUser" style="width:100%; padding:12px; margin-bottom:16px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box; outline:none;">
-  
   <label style="font-size:13px; color:#e2e8f0; font-weight:600; display:block; margin-bottom:8px;">Password Lama</label>
   <input type="password" id="gpOld" style="width:100%; padding:12px; margin-bottom:16px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box; outline:none;">
-  
   <label style="font-size:13px; color:#e2e8f0; font-weight:600; display:block; margin-bottom:8px;">Password Baru</label>
   <input type="password" id="gpNew" style="width:100%; padding:12px; margin-bottom:24px; background:#0f172a; border:1px solid #334155; border-radius:8px; color:#f8fafc; font-size:14px; box-sizing:border-box; outline:none;">
   <div id="gpStatus" style="text-align:center; margin-bottom:16px; font-size:13px; font-weight:bold; transition:0.3s;"></div>
   <button onclick="doChangePass()" style="width:100%; padding:12px; background:#2563eb; color:white; border:none; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; margin-bottom:12px; transition:0.2s;">Simpan Password Baru</button>
-  
   <button onclick="document.getElementById('passModal').style.display='none'" style="width:100%; padding:12px; background:transparent; color:#94a3b8; border:1px solid #475569; border-radius:8px; font-weight:bold; font-size:14px; cursor:pointer; transition:0.2s;">Batal / Tutup</button>
-  
 </div>
+
+  <!-- ========================================== -->
+  <!-- MODAL CUSTOM ALERT (POP-UP KEREN)          -->
+  <!-- ========================================== -->
+  <div id="customAlertOverlay" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:100000; backdrop-filter:blur(3px);">
+    <div style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); width:85%; max-width:320px; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:24px; box-shadow:0 10px 40px rgba(0,0,0,0.8); text-align:center;">
+      <div style="font-size:36px; margin-bottom:12px;">⚠️</div>
+      <div id="customAlertMessage" style="color:#f8fafc; font-size:14px; margin-bottom:24px; line-height:1.5; font-weight:500;"></div>
+      <button onclick="document.getElementById('customAlertOverlay').style.display='none'" style="background:#3b82f6; color:white; border:none; padding:12px 20px; border-radius:6px; font-weight:bold; cursor:pointer; width:100%; font-size:14px;">Paham, Siap!</button>
+    </div>
+  </div>
 
 <script>
 function showPassModal() { 
@@ -628,20 +636,19 @@ function doChangePass() {
   var statusDiv = document.getElementById('gpStatus');
   
   if(!u || !o || !n) {
-    statusDiv.style.color = "#ef4444"; // Merah
+    statusDiv.style.color = "#ef4444"; 
     statusDiv.innerText = "Semua kolom harus diisi!";
     return;
   }
   
-  statusDiv.style.color = "#fbbf24"; // Kuning
+  statusDiv.style.color = "#fbbf24"; 
   statusDiv.innerText = "Tak proses sek yo perubahan password nya...";
   
   google.script.run.withSuccessHandler(function(res) { 
     if(res.success) {
-      statusDiv.style.color = "#22c55e"; // Hijau
+      statusDiv.style.color = "#22c55e"; 
       statusDiv.innerText = "✅ " + res.message;
       
-      // Auto tutup modal setelah 2 detik dan reset isian
       setTimeout(function() {
         document.getElementById('passModal').style.display = 'none';
         statusDiv.innerText = "";
@@ -650,7 +657,7 @@ function doChangePass() {
       }, 2000);
       
     } else {
-      statusDiv.style.color = "#ef4444"; // Merah
+      statusDiv.style.color = "#ef4444"; 
       statusDiv.innerText = "❌ " + res.message;
     }
   }).changePassword(u, o, n);
@@ -743,39 +750,45 @@ function doChangePass() {
       document.getElementById('loginArea').style.display = 'block';
     }
 
-    function enterApp(user, ruangan, role) {
-  document.getElementById('loginArea').style.display = 'none';
-  document.getElementById('userDisplay').innerText = 'Ruangan: ' + ruangan;
-  document.getElementById('mainApp').style.display = 'block';
+    function enterApp(role, ruangan, username) {
+      currentRole = role;
+      PRESET_ROOM = role === 'pic' ? ruangan : '';
 
-  if (role === 'validator') {
-    // Sembunyikan pernak-pernik milik PIC agar bersih
-    var hide1 = document.querySelector('#mainApp h2');
-    var hide2 = document.querySelector('#mainApp p');
-    var hide3 = document.getElementById('loading');
-    var hide4 = document.querySelector('.tabs');
-    var hide5 = document.getElementById('formContainer');
-    
-    if(hide1) hide1.style.display = 'none';
-    if(hide2) hide2.style.display = 'none';
-    if(hide3) hide3.style.display = 'none';
-    if(hide4) hide4.style.display = 'none';
-    if(hide5) hide5.style.display = 'none';
+      document.getElementById('loginArea').style.display = 'none';
+      document.getElementById('appWrap').style.display = 'block';
+      
+      const loggedInEl = document.getElementById('loggedInAs');
+      if (role === 'validator') {
+        loggedInEl.innerHTML = '👤 <span style="color:var(--primary-600); font-weight:bold;">Validator: ' + username + '</span>';
+      } else if (role === 'admin') {
+        loggedInEl.innerHTML = '👑 <span style="color:var(--primary-600); font-weight:bold;">Admin (Semua Akses)</span>';
+      } else {
+        loggedInEl.innerHTML = '🏥 <span style="color:var(--primary-600); font-weight:bold;">Ruangan: ' + ruangan + '</span>';
+      }
 
-    document.getElementById('validatorDashboard').style.display = 'block';
-    
-    // Simpan data siapa validator yang sedang login
-    window.currentValidator = user;
-    loadPendingValidations(); 
-    return;
-  }
+      if (role === 'validator') {
+        var menuTabs = document.querySelector('.tabs');
+        if(menuTabs) menuTabs.style.display = 'none'; 
+        
+        if(document.getElementById('formArea')) document.getElementById('formArea').style.display = 'none';
+        if(document.getElementById('rekapArea')) document.getElementById('rekapArea').style.display = 'none';
+        if(document.getElementById('laporanArea')) document.getElementById('laporanArea').style.display = 'none';
+        if(document.getElementById('loading')) document.getElementById('loading').style.display = 'none';
+        
+        document.getElementById('validatorDashboard').style.display = 'block';
+        window.currentValidator = username;
+        loadPendingValidations();
+        return; 
+      }
+      
+      var menuTabs = document.querySelector('.tabs');
+      if(menuTabs) menuTabs.style.display = 'flex'; 
+      
+      if(document.getElementById('validatorDashboard')) document.getElementById('validatorDashboard').style.display = 'none';
 
-  // Jika yang login adalah PIC Ruangan biasa
-  google.script.run.withSuccessHandler(function(data) {
-    window.appData = data;
-    renderForm(ruangan);
-  }).getFormData();
-}
+      switchTab('input');
+      init();
+    }
 
     function bootstrap() {
       const saved = localStorage.getItem(LOGIN_STORAGE_KEY);
@@ -784,7 +797,7 @@ function doChangePass() {
           const parsed = JSON.parse(saved);
           enterApp(parsed.role, parsed.ruangan, parsed.username);
           return;
-        } catch (e) { /* ignore */ }
+        } catch (e) {}
       }
       document.getElementById('loginArea').style.display = 'block';
     }
@@ -962,7 +975,6 @@ function doChangePass() {
             dataRows.push(csvRow);
           });
 
-          // === KODE YANG HILANG: MENAMBAHKAN BARIS PIC ===
           html += '<tr class="pic-row" style="background:#fff3cd; color:#8a5a00;"><td style="position:sticky; left:0; font-weight:600; background:inherit;">Diisi Oleh</td>';
           const picCsvRow = ['Diisi Oleh'];
           result.pics.forEach(pic => {
@@ -971,7 +983,6 @@ function doChangePass() {
           });
           html += '</tr>';
           dataRows.push(picCsvRow);
-          // ===============================================
 
           html += '</table></div>';
 
@@ -1360,43 +1371,43 @@ function doChangePass() {
     }
 bootstrap();
 
-// ==========================================
-// MESIN PENGGERAK VALIDATOR
-// ==========================================
 function loadPendingValidations() {
   var container = document.getElementById('valListContainer');
-  container.innerHTML = '<div style="color:#fbbf24; text-align:center; padding:20px;">Mengambil data...</div>';
+  container.innerHTML = '<div style="color:#fbbf24; text-align:center; padding:20px;">Mengambil data bulanan...</div>';
   
   google.script.run.withSuccessHandler(function(data) {
     if(data.length === 0) {
-      container.innerHTML = '<div style="color:#22c55e; text-align:center; padding:30px; background:#0f172a; border-radius:10px; border:1px solid #1e293b;">🎉 Keren! Semua data sudah tervalidasi. Kosong nih!</div>';
+      container.innerHTML = '<div style="color:#22c55e; text-align:center; padding:30px; background:#0f172a; border-radius:10px; border:1px solid #1e293b;">🎉 Keren! Semua data bulan ini sudah tervalidasi. Kosong nih!</div>';
       return;
     }
     
     var html = '';
     data.forEach(function(item) {
       var safeInd = item.indikator.replace(/'/g, "\\'"); 
+      // Amankan array row biar nggak error pas dikirim ke HTML
+      var encodedIndexes = encodeURIComponent(JSON.stringify(item.rowIndexes));
       
       html += '<div style="background:#1e293b; padding:16px; border-radius:10px; border:1px solid #334155; box-shadow:0 4px 6px rgba(0,0,0,0.2);">' +
                 '<div style="display:flex; justify-content:space-between; margin-bottom:8px;">' +
-                  '<span style="font-size:12px; color:#fbbf24; font-weight:bold; background:#451a03; padding:2px 8px; border-radius:4px;">' + item.tanggal + '</span>' +
+                  '<span style="font-size:12px; color:#fbbf24; font-weight:bold; background:#451a03; padding:2px 8px; border-radius:4px;">' + item.periode + '</span>' +
                   '<span style="font-size:12px; color:#94a3b8; font-weight:bold;">' + item.ruangan + '</span>' +
                 '</div>' +
                 '<div style="font-weight:bold; color:#f8fafc; margin-bottom:8px; font-size:15px; line-height:1.3;">' + item.indikator + '</div>' +
                 '<div style="font-size:13px; color:#cbd5e1; margin-bottom:12px; background:#0f172a; padding:8px; border-radius:6px;">' +
-                   'Hasil Ruangan ➔ <b>Num:</b> ' + item.numerator + ' | <b>Den:</b> ' + item.denominator + '<br>' +
-                   '<span style="font-size:11px; color:#94a3b8;">Diisi oleh: ' + (item.pic || '-') + '</span>' +
+                   'Total Akumulasi Sebulan ➔ <b>Num:</b> ' + item.numerator + ' | <b>Den:</b> ' + item.denominator + '<br>' +
+                   '<span style="font-size:11px; color:#94a3b8;">(Mencakup ' + item.rowIndexes.length + ' hari pengisian data)</span>' +
                 '</div>' +
-                '<button onclick="openValModal('+item.rowIndex+', \''+item.tanggal+'\', \''+item.ruangan+'\', \''+safeInd+'\')" style="width:100%; padding:10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:13px;">Proses Validasi Data</button>' +
+                '<button onclick="openValModal(\''+encodedIndexes+'\', \''+item.periode+'\', \''+item.ruangan+'\', \''+safeInd+'\')" style="width:100%; padding:10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:13px;">Proses Validasi Bulanan</button>' +
               '</div>';
     });
     container.innerHTML = html;
   }).getPendingValidations();
 }
 
-function openValModal(rowIndex, tanggal, ruangan, indikator) {
-  document.getElementById('valRowIndex').value = rowIndex;
-  document.getElementById('valModalTitle').innerText = ruangan + ' • ' + tanggal;
+function openValModal(rowIndexesEncoded, periode, ruangan, indikator) {
+  // Simpan array baris yang sudah di-decode ke hidden input
+  document.getElementById('valRowIndex').value = decodeURIComponent(rowIndexesEncoded); 
+  document.getElementById('valModalTitle').innerText = ruangan + ' • ' + periode;
   document.getElementById('valModalSubtitle').innerText = indikator;
   
   document.getElementById('valPopulasi').value = '';
@@ -1409,31 +1420,52 @@ function openValModal(rowIndex, tanggal, ruangan, indikator) {
 }
 
 function doSubmitVal(status) {
+  var populasi = document.getElementById('valPopulasi').value;
+  var sampel = document.getElementById('valSampel').value;
+  var numSampel = document.getElementById('valNumSampel').value;
+  var link = document.getElementById('valLink').value.trim();
+  var catatan = document.getElementById('valCatatan').value.trim();
+
+  if (status === '✅ Valid') {
+    if (!populasi || !sampel || !numSampel || !link) {
+      showCustomAlert("Tunggu dulu! Angka Populasi, Sampel, Numerator Sampel, dan Link Bukti WAJIB diisi untuk Validasi.");
+      return; 
+    }
+  } else if (status === '❌ Kembalikan') {
+    if (!catatan) {
+      showCustomAlert("Kalau data mau dikembalikan, WAJIB isi Catatan Validator supaya ruangan tahu apa yang salah.");
+      document.getElementById('valCatatan').focus();
+      return; 
+    }
+  }
+
   var payload = {
-    rowIndex: document.getElementById('valRowIndex').value,
+    // Ubah string array dari HTML kembali jadi objek JSON betulan
+    rowIndexes: JSON.parse(document.getElementById('valRowIndex').value),
     status: status,
-    populasi: document.getElementById('valPopulasi').value,
-    sampel: document.getElementById('valSampel').value,
-    numSampel: document.getElementById('valNumSampel').value,
-    link: document.getElementById('valLink').value,
-    catatan: document.getElementById('valCatatan').value
+    populasi: populasi,
+    sampel: sampel,
+    numSampel: numSampel,
+    link: link,
+    catatan: catatan
   };
 
   document.getElementById('valModal').style.display = 'none';
   var container = document.getElementById('valListContainer');
-  container.innerHTML = '<div style="color:#fbbf24; text-align:center; padding:20px;">Menyimpan status validasi...</div>';
+  container.innerHTML = '<div style="color:#fbbf24; text-align:center; padding:20px;">Menyimpan status validasi masal...</div>';
 
   google.script.run.withSuccessHandler(function(res) {
     if(res.success) {
       loadPendingValidations(); 
     } else {
-      alert(res.message);
+      showCustomAlert(res.message);
       loadPendingValidations();
     }
+  }).withFailureHandler(function(err){
+    showCustomAlert("Gagal menyimpan: " + err.message);
+    loadPendingValidations();
   }).saveValidation(payload);
 }
 </script>
 </body>
 </html>
-    
-
