@@ -6,6 +6,9 @@
   <style>
     /* Tampilan Otomatis Menyesuaikan Layar PC/Laptop */
   @media screen and (min-width: 768px) {
+    body {
+      max-width: 900px !important;
+    }
     .login-container, .app-container {
       max-width: 800px !important;
       margin: 40px auto !important;
@@ -36,6 +39,48 @@
       padding: 0 16px 16px;
       background: linear-gradient(180deg, var(--primary-50) 0%, #f5f7fb 220px);
       color: var(--ink);
+    }
+    /* ====================================================
+       MODE TEKS BESAR (opsional, tombol "Perbesar Teks")
+       ==================================================== */
+    #textSizeToggle {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 99999;
+      background: #1a56c4;
+      color: #fff;
+      border: none;
+      border-radius: 20px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+    }
+    html.text-large body { font-size: 19px; }
+    html.text-large h1 { font-size: 26px; }
+    html.text-large p.sub { font-size: 17px; }
+    html.text-large label { font-size: 17px; }
+    html.text-large select, html.text-large input[type="date"], html.text-large input[type="text"],
+    html.text-large input[type="password"], html.text-large input[type="number"], html.text-large textarea {
+      font-size: 18px;
+      padding: 13px;
+    }
+    html.text-large button { font-size: 17px; padding: 13px; }
+    html.text-large .tab-btn { font-size: 16px; }
+    html.text-large .app-header .app-title-main { font-size: 19px; }
+    html.text-large .app-header .app-title-sub { font-size: 15px; }
+    html.text-large #textSizeToggle { font-size: 15px; padding: 10px 16px; }
+    html.text-large #recapResult, html.text-large #hasilValResult,
+    html.text-large #valListContainer, html.text-large #valRecapResult,
+    html.text-large #valTotalResult, html.text-large #catatanValidatorBox {
+      font-size: 18px;
+    }
+    html.text-large #recapResult *, html.text-large #hasilValResult *,
+    html.text-large #valListContainer *, html.text-large #valRecapResult *,
+    html.text-large #valTotalResult *, html.text-large #catatanValidatorBox * {
+      font-size: inherit !important;
     }
     .app-header {
       display: flex;
@@ -354,7 +399,14 @@
   </style>
 </head>
 <body>
-  <div id="loginArea">
+<script>
+  // Terapkan preferensi ukuran teks lebih awal, biar tidak "kedip" kecil dulu baru besar
+  if (localStorage.getItem('textSizePref') === 'large') {
+    document.documentElement.classList.add('text-large');
+  }
+</script>
+<button id="textSizeToggle" onclick="toggleTextSize()">🔍 Perbesar Teks</button>
+  <div id="loginArea" class="login-container">
     <div class="login-logo" id="loginLogoWrap">
       <div class="logo-fallback" id="loginLogoFallback">RS</div>
       <img id="loginLogoImg" style="display:none;" alt="Logo Rumah Sakit">
@@ -391,7 +443,7 @@
     </div>
   </div>
 
-  <div id="appWrap" style="display:none;">
+  <div id="appWrap" style="display:none;" class="app-container">
     <div class="app-header">
       <div class="logo-fallback" id="headerLogoFallback">RS</div>
       <img id="headerLogoImg" style="display:none;" alt="Logo Rumah Sakit">
@@ -407,12 +459,15 @@
       <button id="logoutBtn" onclick="doLogout()">Keluar</button>
     </div>
 
+    <div id="catatanValidatorBox" style="display:none; margin:12px 0;"></div>
+
     <div id="loading">Memuat form...</div>
 
     <div id="mainArea" style="display:none;">
     <div class="tabs">
       <button class="tab-btn active" id="tabInputBtn" onclick="switchTab('input')">Input Data</button>
       <button class="tab-btn" id="tabRekapBtn" onclick="switchTab('rekap')">Lihat Rekap</button>
+      <button class="tab-btn" id="tabHasilValBtn" onclick="switchTab('hasilval')">Hasil Validasi</button>
       <button class="tab-btn" id="tabLaporanBtn" onclick="switchTab('laporan')" style="display:none;">Buat Laporan</button>
     </div>
 
@@ -496,6 +551,42 @@
       <div id="recapResult"></div>
     </div>
 
+    <div id="hasilValArea" style="display:none;">
+      <p style="font-size:13px; color:var(--ink-soft); margin-top:0;">Lihat feedback validator untuk data ruangan kamu: status, akurasi, analisa, dan RTL (Rencana Tindak Lanjut).</p>
+
+      <label for="hasilValRuangan">Ruangan</label>
+      <select id="hasilValRuangan"></select>
+
+      <div class="recap-controls" style="margin-top:10px;">
+        <div>
+          <label for="hasilValBulan">Bulan</label>
+          <select id="hasilValBulan">
+            <option value="">— Semua Bulan —</option>
+            <option value="1">Januari</option>
+            <option value="2">Februari</option>
+            <option value="3">Maret</option>
+            <option value="4">April</option>
+            <option value="5">Mei</option>
+            <option value="6">Juni</option>
+            <option value="7">Juli</option>
+            <option value="8">Agustus</option>
+            <option value="9">September</option>
+            <option value="10">Oktober</option>
+            <option value="11">November</option>
+            <option value="12">Desember</option>
+          </select>
+        </div>
+        <div>
+          <label for="hasilValTahun">Tahun</label>
+          <input type="text" id="hasilValTahun" inputmode="numeric" maxlength="4" placeholder="Cth: 2026">
+        </div>
+      </div>
+
+      <button id="hasilValBtn" onclick="loadHasilValidasi()" style="margin-top:10px;">Tampilkan</button>
+
+      <div id="hasilValResult" style="margin-top:14px;"></div>
+    </div>
+
     <div id="laporanArea" style="display:none;">
       <label for="laporanMulai">Tanggal Mulai</label>
       <input type="date" id="laporanMulai">
@@ -563,7 +654,29 @@
     </div>
     <div id="valDownloadStatus" style="font-size:12px; color:#fbbf24; margin-top:10px; font-weight:bold;"></div>
   </div>
-  
+
+  <!-- KOTAK TOTAL NUM/DENUM BULANAN -->
+  <div style="background:#1e293b; padding:16px; border-radius:10px; border:1px solid #334155; margin-bottom:20px;">
+    <h3 style="color:#f8fafc; margin-top:0; font-size:14px; margin-bottom:12px;">📊 Total Num & Denum (Bulanan) — Indikator yang Kamu Validasi</h3>
+    <div style="display:flex; gap:10px; margin-bottom:12px;">
+      <select id="valTotalBulan" style="flex:1; padding:8px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:13px;">
+        <option value="1">Januari</option><option value="2">Februari</option><option value="3">Maret</option>
+        <option value="4">April</option><option value="5">Mei</option><option value="6">Juni</option>
+        <option value="7">Juli</option><option value="8">Agustus</option><option value="9">September</option>
+        <option value="10">Oktober</option><option value="11">November</option><option value="12">Desember</option>
+      </select>
+      <input type="text" id="valTotalTahun" inputmode="numeric" maxlength="4" placeholder="Tahun" style="flex:1; padding:8px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:13px; box-sizing:border-box;">
+      <button onclick="loadValidatorTotals()" style="flex:1; padding:8px; background:#3b82f6; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer; font-size:13px;">Tampilkan</button>
+    </div>
+    <div id="valTotalResult" style="font-size:13px;"></div>
+  </div>
+
+  <!-- KOTAK REKAP HASIL VALIDASI -->
+  <div style="background:#1e293b; padding:16px; border-radius:10px; border:1px solid #334155; margin-bottom:20px;">
+    <h3 style="color:#f8fafc; margin-top:0; font-size:14px; margin-bottom:12px;">🗂️ Rekap Hasil Validasi</h3>
+    <div id="valRecapResult" style="font-size:12px;">Memuat rekap...</div>
+  </div>
+
   <div id="valListContainer" style="display:flex; flex-direction:column; gap:12px;"></div>
 </div>
 
@@ -581,13 +694,21 @@
   <input type="number" id="valPopulasi" placeholder="Cth: 4999" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
 
   <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Jumlah Sampel (10%)</label>
-  <input type="number" id="valSampel" placeholder="Cth: 500" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+  <input type="number" id="valSampel" placeholder="Cth: 500" oninput="hitungAkurasiValidasi()" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
 
   <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Jumlah Patuh (Numerator Sampel)</label>
-  <input type="number" id="valNumSampel" placeholder="Cth: 480" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+  <input type="number" id="valNumSampel" placeholder="Cth: 480" oninput="hitungAkurasiValidasi()" style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+
+  <div id="valAkurasiBox" style="display:none; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:10px 12px; margin-bottom:12px; font-size:12px; color:#cbd5e1; line-height:1.6;"></div>
 
   <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Link Bukti Observasi (Google Drive / Excel)</label>
   <input type="text" id="valLink" placeholder="Paste link di sini..." style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;">
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Analisa (akan tampil ke ruangan)</label>
+  <textarea id="valAnalisa" rows="2" placeholder="Analisa hasil capaian bulan ini..." style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;"></textarea>
+
+  <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">RTL / Rencana Tindak Lanjut (akan tampil ke ruangan)</label>
+  <textarea id="valRtl" rows="2" placeholder="Rencana tindak lanjut untuk ruangan..." style="width:100%; padding:10px; margin-bottom:12px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;"></textarea>
 
   <label style="font-size:12px; color:#94a3b8; font-weight:600; display:block; margin-bottom:6px;">Catatan Validator (Opsional)</label>
   <textarea id="valCatatan" rows="2" placeholder="Tulis catatan jika ada revisi..." style="width:100%; padding:10px; margin-bottom:20px; background:#0f172a; border:1px solid #334155; border-radius:6px; color:#f8fafc; font-size:14px; box-sizing:border-box;"></textarea>
@@ -681,6 +802,16 @@ function doChangePass() {
     applyLogo();
 
     let PRESET_ROOM = '';
+
+    function toggleTextSize() {
+      const html = document.documentElement;
+      const isLarge = html.classList.toggle('text-large');
+      localStorage.setItem('textSizePref', isLarge ? 'large' : 'normal');
+      document.getElementById('textSizeToggle').textContent = isLarge ? '🔍 Teks Normal' : '🔍 Perbesar Teks';
+    }
+    if (document.documentElement.classList.contains('text-large')) {
+      document.getElementById('textSizeToggle').textContent = '🔍 Teks Normal';
+    }
     let currentRole = '';
 
     const LOGIN_STORAGE_KEY = 'inm_login_v1';
@@ -745,6 +876,13 @@ function doChangePass() {
       document.getElementById('loading').style.display = 'block';
       document.getElementById('loading').textContent = 'Memuat form...';
       document.getElementById('tabLaporanBtn').style.display = 'none';
+      if(document.getElementById('validatorDashboard')) document.getElementById('validatorDashboard').style.display = 'none';
+      if(document.getElementById('catatanValidatorBox')) { document.getElementById('catatanValidatorBox').style.display = 'none'; document.getElementById('catatanValidatorBox').innerHTML = ''; }
+      var bulanSelReset = document.getElementById('valTotalBulan');
+      if (bulanSelReset) delete bulanSelReset.dataset.initialized;
+      window.currentValidator = '';
+      var hasilValTahunReset = document.getElementById('hasilValTahun');
+      if (hasilValTahunReset) hasilValTahunReset.value = '';
 
       document.getElementById('appWrap').style.display = 'none';
       document.getElementById('loginArea').style.display = 'block';
@@ -778,6 +916,9 @@ function doChangePass() {
         document.getElementById('validatorDashboard').style.display = 'block';
         window.currentValidator = username;
         loadPendingValidations();
+        initValidatorTotalDefaults();
+        loadValidatorTotals();
+        loadValidatedRecap();
         return; 
       }
       
@@ -788,6 +929,37 @@ function doChangePass() {
 
       switchTab('input');
       init();
+
+      if (role === 'pic') {
+        loadCatatanValidator(ruangan);
+      }
+    }
+
+    function loadCatatanValidator(ruangan) {
+      const box = document.getElementById('catatanValidatorBox');
+      if (!box) return;
+      google.script.run
+        .withSuccessHandler(function (list) {
+          if (!list || list.length === 0) {
+            box.style.display = 'none';
+            box.innerHTML = '';
+            return;
+          }
+          let html = '<div style="font-weight:700; margin-bottom:8px;">📋 Catatan dari Validator untuk Ruangan Kamu</div>';
+          list.forEach(function (c) {
+            html += '<div style="background:#fef2f2; color:#991b1b; padding:10px 12px; border-radius:8px; margin-bottom:8px; font-size:13px; border:1px solid #fecaca;">'
+              + '<div style="font-weight:600;">' + c.indikator + ' &middot; ' + c.periode + ' (Tgl ' + c.tanggal + ')</div>'
+              + (c.status ? '<div style="font-size:11px; opacity:0.85; margin-top:2px;">Status: ' + c.status + '</div>' : '')
+              + '<div style="margin-top:4px;">' + c.catatan + '</div>'
+              + '</div>';
+          });
+          box.innerHTML = html;
+          box.style.display = 'block';
+        })
+        .withFailureHandler(function (err) {
+          box.style.display = 'none';
+        })
+        .getCatatanUntukRuangan(ruangan);
     }
 
     function bootstrap() {
@@ -855,10 +1027,16 @@ function doChangePass() {
     function switchTab(tab) {
       document.getElementById('formArea').style.display = tab === 'input' ? 'block' : 'none';
       document.getElementById('rekapArea').style.display = tab === 'rekap' ? 'block' : 'none';
+      document.getElementById('hasilValArea').style.display = tab === 'hasilval' ? 'block' : 'none';
       document.getElementById('laporanArea').style.display = tab === 'laporan' ? 'block' : 'none';
       document.getElementById('tabInputBtn').classList.toggle('active', tab === 'input');
       document.getElementById('tabRekapBtn').classList.toggle('active', tab === 'rekap');
+      document.getElementById('tabHasilValBtn').classList.toggle('active', tab === 'hasilval');
       document.getElementById('tabLaporanBtn').classList.toggle('active', tab === 'laporan');
+      if (tab === 'hasilval' && !document.getElementById('hasilValTahun').value) {
+        document.getElementById('hasilValTahun').value = String(new Date().getFullYear());
+        loadHasilValidasi();
+      }
     }
 
     function checkMatrixToggleVisibility() {
@@ -875,11 +1053,14 @@ function doChangePass() {
     function populateRooms(rooms) {
       const sel = document.getElementById('ruangan');
       const rekapSel = document.getElementById('rekapRuangan');
+      const hasilValSel = document.getElementById('hasilValRuangan');
       if (PRESET_ROOM) {
         sel.innerHTML = `<option value="${PRESET_ROOM}">${PRESET_ROOM}</option>`;
         sel.disabled = true;
         rekapSel.innerHTML = `<option value="${PRESET_ROOM}">${PRESET_ROOM}</option>`;
         rekapSel.disabled = true;
+        hasilValSel.innerHTML = `<option value="${PRESET_ROOM}">${PRESET_ROOM}</option>`;
+        hasilValSel.disabled = true;
         document.getElementById('tabLaporanBtn').style.display = 'none';
       } else {
         const opts = rooms.map(r => `<option value="${r}">${r}</option>`).join('');
@@ -887,11 +1068,60 @@ function doChangePass() {
         sel.disabled = false;
         rekapSel.innerHTML = '<option value="SEMUA">— Semua Ruangan (Total RS) —</option>' + opts;
         rekapSel.disabled = false;
+        hasilValSel.innerHTML = '<option value="SEMUA">— Semua Ruangan —</option>' + opts;
+        hasilValSel.disabled = false;
         document.getElementById('tabLaporanBtn').style.display = 'block';
       }
       roomsReady = true;
       checkMatrixToggleVisibility();
       maybeLoadExisting();
+    }
+
+    function loadHasilValidasi() {
+      const ruangan = document.getElementById('hasilValRuangan').value;
+      const bulan = document.getElementById('hasilValBulan').value;
+      const tahun = document.getElementById('hasilValTahun').value;
+      const resultEl = document.getElementById('hasilValResult');
+      const btn = document.getElementById('hasilValBtn');
+
+      btn.disabled = true;
+      btn.textContent = 'Memuat...';
+      resultEl.innerHTML = '';
+
+      google.script.run
+        .withSuccessHandler(function (rows) {
+          btn.disabled = false;
+          btn.textContent = 'Tampilkan';
+          if (!rows || rows.length === 0) {
+            resultEl.innerHTML = '<div style="color:var(--ink-soft); font-size:13px;">Belum ada hasil validasi untuk pilihan ini.</div>';
+            return;
+          }
+          let html = '';
+          rows.forEach(function (r) {
+            const isKembali = (r.status || '').indexOf('Kembalikan') > -1;
+            const statusColor = isKembali ? '#991b1b' : '#137333';
+            const statusBg = isKembali ? '#fef2f2' : '#e6f4ea';
+            const akurasiText = (r.akurasi === '' || r.akurasi === null || r.akurasi === undefined) ? '-' : r.akurasi + '%';
+            html += '<div style="border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:12px; background:#fff;">'
+              + '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">'
+              + '<span style="font-weight:700; font-size:14px;">' + r.indikator + '</span>'
+              + '<span style="background:' + statusBg + '; color:' + statusColor + '; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:700;">' + r.status + '</span>'
+              + '</div>'
+              + '<div style="font-size:12px; color:var(--ink-soft); margin-bottom:8px;">' + r.periode + ' &middot; Tgl ' + r.tanggal + (r.ruangan ? ' &middot; ' + r.ruangan : '') + '</div>'
+              + '<div style="font-size:13px; margin-bottom:6px;">Num/Denum: <b>' + r.num + ' / ' + r.den + '</b> &middot; Populasi: <b>' + r.populasi + '</b> &middot; Sampel: <b>' + r.sampel + '</b> &middot; Akurasi: <b>' + akurasiText + '</b></div>'
+              + (r.analisa && r.analisa !== '-' ? '<div style="font-size:13px; margin-top:8px; padding:8px; background:var(--primary-50); border-radius:6px;"><b>Analisa:</b> ' + r.analisa + '</div>' : '')
+              + (r.rtl && r.rtl !== '-' ? '<div style="font-size:13px; margin-top:8px; padding:8px; background:var(--primary-50); border-radius:6px;"><b>RTL:</b> ' + r.rtl + '</div>' : '')
+              + (r.catatan && r.catatan !== '-' ? '<div style="font-size:13px; margin-top:8px; padding:8px; background:#fff8e1; color:#7a5c00; border-radius:6px;"><b>Catatan:</b> ' + r.catatan + '</div>' : '')
+              + '</div>';
+          });
+          resultEl.innerHTML = html;
+        })
+        .withFailureHandler(function (err) {
+          btn.disabled = false;
+          btn.textContent = 'Tampilkan';
+          resultEl.innerHTML = '<div style="color:#991b1b; font-size:13px;">Gagal memuat: ' + err.message + '</div>';
+        })
+        .getHasilValidasiUntukRuangan(ruangan, bulan, tahun);
     }
 
     function loadRecap() {
@@ -958,9 +1188,10 @@ function doChangePass() {
           let html = '<div style="overflow-x:auto; margin-top:10px;"><table id="recapTable" style="min-width:' + (150 + rooms.length * 70) + 'px;">';
           html += '<tr><th style="position:sticky;left:0;background:var(--primary-50);">Indikator</th>';
           rooms.forEach(r => { html += `<th>${r}</th>`; });
+          html += '<th style="background:#fff3cd;color:#8a5a00;">TOTAL RS<br>(Num/Denum)</th>';
           html += '</tr>';
           const dataRows = [];
-          const headers = ['Indikator'].concat(rooms);
+          const headers = ['Indikator'].concat(rooms).concat(['Total Num RS', 'Total Denum RS']);
           result.rows.forEach(row => {
             html += `<tr><td style="position:sticky;left:0;background:var(--bg-surface);font-weight:600;">${row.indikator}</td>`;
             const csvRow = [row.indikator];
@@ -971,6 +1202,8 @@ function doChangePass() {
               html += `<td class="num">${isInvalid ? '<span style="color:#c5221f;font-weight:700;">⚠️ ' + text + '</span>' : text}</td>`;
               csvRow.push(v === null ? '' : v);
             });
+            html += `<td class="num" style="background:#fff3cd;color:#8a5a00;font-weight:700;">${row.totalNum} / ${row.totalDen}</td>`;
+            csvRow.push(row.totalNum, row.totalDen);
             html += '</tr>';
             dataRows.push(csvRow);
           });
@@ -981,6 +1214,8 @@ function doChangePass() {
             html += `<td class="num">${pic || '-'}</td>`;
             picCsvRow.push(pic || '');
           });
+          html += '<td class="num" style="background:inherit;">-</td>';
+          picCsvRow.push('', '');
           html += '</tr>';
           dataRows.push(picCsvRow);
 
@@ -1397,26 +1632,189 @@ function loadPendingValidations() {
                    'Total Akumulasi Sebulan ➔ <b>Num:</b> ' + item.numerator + ' | <b>Den:</b> ' + item.denominator + '<br>' +
                    '<span style="font-size:11px; color:#94a3b8;">(Mencakup ' + item.rowIndexes.length + ' hari pengisian data)</span>' +
                 '</div>' +
-                '<button onclick="openValModal(\''+encodedIndexes+'\', \''+item.periode+'\', \''+item.ruangan+'\', \''+safeInd+'\')" style="width:100%; padding:10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:13px;">Proses Validasi Bulanan</button>' +
+                '<button onclick="openValModal(\''+encodedIndexes+'\', \''+item.periode+'\', \''+item.ruangan+'\', \''+safeInd+'\', '+item.numerator+', '+item.denominator+')" style="width:100%; padding:10px; background:#3b82f6; color:white; border:none; border-radius:6px; cursor:pointer; font-weight:bold; font-size:13px;">Proses Validasi Bulanan</button>' +
               '</div>';
     });
     container.innerHTML = html;
-  }).getPendingValidations();
+  }).getPendingValidations(window.currentValidator);
 }
 
-function openValModal(rowIndexesEncoded, periode, ruangan, indikator) {
+function initValidatorTotalDefaults() {
+  var now = new Date();
+  var bulanSel = document.getElementById('valTotalBulan');
+  var tahunInput = document.getElementById('valTotalTahun');
+  if (bulanSel && !bulanSel.dataset.initialized) {
+    bulanSel.value = String(now.getMonth() + 1);
+    tahunInput.value = String(now.getFullYear());
+    bulanSel.dataset.initialized = '1';
+  }
+}
+
+function loadValidatorTotals() {
+  var resultEl = document.getElementById('valTotalResult');
+  var bulan = document.getElementById('valTotalBulan').value;
+  var tahun = document.getElementById('valTotalTahun').value || new Date().getFullYear();
+  resultEl.innerHTML = '<div style="color:#94a3b8;">Memuat total...</div>';
+
+  google.script.run
+    .withSuccessHandler(function (rows) {
+      if (!rows || rows.length === 0) {
+        resultEl.innerHTML = '<div style="color:#94a3b8;">Belum ada indikator/data untuk periode ini.</div>';
+        return;
+      }
+      var html = '<table style="width:100%; border-collapse:collapse;">';
+      html += '<tr style="border-bottom:1px solid #334155;"><th style="text-align:left; padding:6px; color:#94a3b8;">Indikator</th><th style="text-align:right; padding:6px; color:#94a3b8;">Total Num</th><th style="text-align:right; padding:6px; color:#94a3b8;">Total Denum</th></tr>';
+      rows.forEach(function (r) {
+        html += '<tr style="border-bottom:1px solid #0f172a;">' +
+          '<td style="padding:6px; color:#f8fafc;">' + r.indikator + '</td>' +
+          '<td style="padding:6px; text-align:right; color:#f8fafc;">' + r.totalNum + '</td>' +
+          '<td style="padding:6px; text-align:right; color:#f8fafc;">' + r.totalDen + '</td>' +
+          '</tr>';
+      });
+      html += '</table>';
+      resultEl.innerHTML = html;
+    })
+    .withFailureHandler(function (err) {
+      resultEl.innerHTML = '<div style="color:#fca5a5;">Gagal memuat: ' + err.message + '</div>';
+    })
+    .getValidatorTotalNumDen(window.currentValidator, bulan, tahun);
+}
+
+function loadValidatedRecap() {
+  var resultEl = document.getElementById('valRecapResult');
+  resultEl.innerHTML = '<div style="color:#94a3b8;">Memuat rekap...</div>';
+
+  google.script.run
+    .withSuccessHandler(function (rows) {
+      if (!rows || rows.length === 0) {
+        resultEl.innerHTML = '<div style="color:#94a3b8;">Belum ada data yang divalidasi.</div>';
+        return;
+      }
+      var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; min-width:760px;">';
+      html += '<tr style="border-bottom:1px solid #334155;">' +
+        '<th style="text-align:left; padding:6px; color:#94a3b8;">Periode</th>' +
+        '<th style="text-align:left; padding:6px; color:#94a3b8;">Ruangan</th>' +
+        '<th style="text-align:left; padding:6px; color:#94a3b8;">Indikator</th>' +
+        '<th style="text-align:right; padding:6px; color:#94a3b8;">Num</th>' +
+        '<th style="text-align:right; padding:6px; color:#94a3b8;">Denum</th>' +
+        '<th style="text-align:right; padding:6px; color:#94a3b8;">Akurasi</th>' +
+        '<th style="text-align:left; padding:6px; color:#94a3b8;">Status</th>' +
+        '</tr>';
+      rows.forEach(function (r) {
+        var isKembali = (r.status || '').indexOf('Kembalikan') > -1;
+        var statusColor = isKembali ? '#fca5a5' : '#6ee7b7';
+        var akurasiText = (r.akurasi === '' || r.akurasi === null || r.akurasi === undefined) ? '-' : r.akurasi + '%';
+        var warn = r.perluValidasiUlang
+          ? '<div style="color:#fbbf24; font-size:11px; margin-top:2px;">⚠️ Data ruangan berubah setelah divalidasi (saat ini: ' + r.numSaatIni + '/' + r.denSaatIni + '). Perlu validasi ulang.</div>'
+          : '';
+        html += '<tr style="border-bottom:1px solid #0f172a;">' +
+          '<td style="padding:6px; color:#f8fafc;">' + r.periode + '</td>' +
+          '<td style="padding:6px; color:#f8fafc;">' + r.ruangan + '</td>' +
+          '<td style="padding:6px; color:#f8fafc;">' + r.indikator + warn + '</td>' +
+          '<td style="padding:6px; text-align:right; color:#f8fafc;">' + r.num + '</td>' +
+          '<td style="padding:6px; text-align:right; color:#f8fafc;">' + r.den + '</td>' +
+          '<td style="padding:6px; text-align:right; color:#f8fafc;">' + akurasiText + '</td>' +
+          '<td style="padding:6px; color:' + statusColor + '; font-weight:600;">' + r.status + '</td>' +
+          '</tr>';
+      });
+      html += '</table></div>';
+      resultEl.innerHTML = html;
+    })
+    .withFailureHandler(function (err) {
+      resultEl.innerHTML = '<div style="color:#fca5a5;">Gagal memuat rekap: ' + err.message + '</div>';
+    })
+    .getValidatedRecapForDisplay(window.currentValidator);
+}
+
+function downloadValReport(format) {
+  var statusDiv = document.getElementById('valDownloadStatus');
+  var btnExcel = document.getElementById('btnValExcel');
+  var btnPdf = document.getElementById('btnValPdf');
+  btnExcel.disabled = true;
+  btnPdf.disabled = true;
+  statusDiv.textContent = 'Mohon tunggu, file ' + (format === 'pdf' ? 'PDF' : 'Excel') + ' sedang dibuat...';
+
+  google.script.run
+    .withSuccessHandler(function (result) {
+      btnExcel.disabled = false;
+      btnPdf.disabled = false;
+      statusDiv.textContent = '';
+      var mime = format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+      var blob = base64ToBlob(result.base64, mime);
+      var link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = result.filename;
+      link.click();
+    })
+    .withFailureHandler(function (err) {
+      btnExcel.disabled = false;
+      btnPdf.disabled = false;
+      statusDiv.textContent = '';
+      showCustomAlert('Gagal membuat file: ' + err.message);
+    })
+    .downloadValidationReport(window.currentValidator, format);
+}
+
+function openValModal(rowIndexesEncoded, periode, ruangan, indikator, totalNumerator, totalDenominator) {
   // Simpan array baris yang sudah di-decode ke hidden input
   document.getElementById('valRowIndex').value = decodeURIComponent(rowIndexesEncoded); 
   document.getElementById('valModalTitle').innerText = ruangan + ' • ' + periode;
   document.getElementById('valModalSubtitle').innerText = indikator;
-  
-  document.getElementById('valPopulasi').value = '';
+
+  window.valCapaianNum = Number(totalNumerator) || 0;
+  window.valCapaianDen = Number(totalDenominator) || 0;
+
+  document.getElementById('valPopulasi').value = window.valCapaianDen || '';
   document.getElementById('valSampel').value = '';
   document.getElementById('valNumSampel').value = '';
   document.getElementById('valLink').value = '';
   document.getElementById('valCatatan').value = '';
+  document.getElementById('valAnalisa').value = '';
+  document.getElementById('valRtl').value = '';
+  document.getElementById('valAkurasiBox').style.display = 'none';
+  document.getElementById('valAkurasiBox').innerHTML = '';
   
   document.getElementById('valModal').style.display = 'block';
+}
+
+/**
+ * Menghitung Akurasi Data secara live di modal validator, mengikuti
+ * metode uji akurasi yang dipakai tim validator:
+ * Capaian = Total Num / Total Den bulan ini (data ruangan)
+ * Temuan  = Num Sampel / Sampel (hasil observasi ulang validator)
+ * Akurasi = (1 - |Capaian - Temuan| / Capaian) x 100%, akurat jika >= 90%
+ */
+function hitungAkurasiValidasi() {
+  var box = document.getElementById('valAkurasiBox');
+  var sampel = Number(document.getElementById('valSampel').value) || 0;
+  var numSampel = Number(document.getElementById('valNumSampel').value) || 0;
+  var capaianDen = window.valCapaianDen || 0;
+  var capaianNum = window.valCapaianNum || 0;
+
+  if (sampel <= 0 || capaianDen <= 0) {
+    box.style.display = 'none';
+    return;
+  }
+
+  var capaian = (capaianNum / capaianDen) * 100;
+  var temuan = (numSampel / sampel) * 100;
+  var akurasi = capaian > 0 ? (1 - Math.abs(capaian - temuan) / capaian) * 100 : 0;
+  var isAkurat = akurasi >= 90;
+
+  box.style.display = 'block';
+  box.innerHTML =
+    'Capaian Bulanan (data ruangan): <b style="color:#f8fafc;">' + capaian.toFixed(1) + '%</b><br>' +
+    'Hasil Temuan (sampel validator): <b style="color:#f8fafc;">' + temuan.toFixed(1) + '%</b><br>' +
+    'Akurasi: <b style="color:' + (isAkurat ? '#6ee7b7' : '#fca5a5') + ';">' + akurasi.toFixed(2) + '%</b> ' +
+    '<span style="color:' + (isAkurat ? '#6ee7b7' : '#fca5a5') + ';">(' + (isAkurat ? 'Akurat, ≥ 90%' : 'Tidak Akurat, < 90%') + ')</span>';
+}
+
+function showCustomAlert(message) {
+  var overlay = document.getElementById('customAlertOverlay');
+  var msgEl = document.getElementById('customAlertMessage');
+  if (!overlay || !msgEl) { alert(message); return; }
+  msgEl.textContent = message;
+  overlay.style.display = 'block';
 }
 
 function doSubmitVal(status) {
@@ -1425,6 +1823,8 @@ function doSubmitVal(status) {
   var numSampel = document.getElementById('valNumSampel').value;
   var link = document.getElementById('valLink').value.trim();
   var catatan = document.getElementById('valCatatan').value.trim();
+  var analisa = document.getElementById('valAnalisa').value.trim();
+  var rtl = document.getElementById('valRtl').value.trim();
 
   if (status === '✅ Valid') {
     if (!populasi || !sampel || !numSampel || !link) {
@@ -1447,7 +1847,9 @@ function doSubmitVal(status) {
     sampel: sampel,
     numSampel: numSampel,
     link: link,
-    catatan: catatan
+    catatan: catatan,
+    analisa: analisa,
+    rtl: rtl
   };
 
   document.getElementById('valModal').style.display = 'none';
@@ -1456,7 +1858,14 @@ function doSubmitVal(status) {
 
   google.script.run.withSuccessHandler(function(res) {
     if(res.success) {
-      loadPendingValidations(); 
+      var msg = res.message;
+      if (res.akurasi !== '' && res.akurasi !== null && res.akurasi !== undefined) {
+        msg += ' Akurasi: ' + res.akurasi + '% (' + (res.akurasi >= 90 ? 'Akurat' : 'Tidak Akurat') + ').';
+      }
+      showCustomAlert(msg);
+      loadPendingValidations();
+      loadValidatedRecap();
+      loadValidatorTotals();
     } else {
       showCustomAlert(res.message);
       loadPendingValidations();
