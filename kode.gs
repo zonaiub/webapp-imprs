@@ -87,7 +87,7 @@ const CONFIG_SHEET_NAME = 'Config';
 const DATA_SHEET_NAME = 'Data Master';
 const USERS_SHEET_NAME = 'Users';
 
-const DATA_HEADERS = ['Timestamp', 'Tanggal', 'Ruangan', 'Indikator', 'Numerator', 'Denominator', 'Diisi Oleh', 'Keterangan', 'Status Validasi', 'Populasi', 'Sampel', 'Num Sampel', 'Link Bukti', 'Catatan Validator'];
+const DATA_HEADERS = ['Timestamp', 'Tanggal', 'Ruangan', 'Indikator', 'Numerator', 'Denominator', 'Diisi Oleh', 'Keterangan', 'Status Validasi', 'Populasi', 'Sampel', 'Num Sampel', 'Link Bukti', 'Catatan Validator', 'Akurasi Validasi (%)', 'Analisa Validator', 'RTL Validator'];
 
 const REVERSE_INDICATOR_NAMES = [];
 
@@ -252,6 +252,34 @@ function login(username, password) {
   return { success: false, message: 'Username atau password salah.' };
 }
 
+/**
+ * Jalankan SEKALI SAJA (manual dari editor Apps Script) kalau sheet "Data Master"
+ * dibuat sebelum kolom "Akurasi Validasi (%)" ditambahkan, supaya header di
+ * baris 1 ikut terisi. Aman dijalankan berkali-kali.
+ */
+/**
+ * Jalankan SEKALI SAJA (manual dari editor Apps Script) untuk menambahkan
+ * kolom "Arah Target" di sheet Config. Setelah ini ada, admin bisa atur
+ * arah target per indikator LANGSUNG dari spreadsheet (isi "Minimal" untuk
+ * target ≥ atau "Maksimal" untuk target ≤), tanpa perlu edit kode lagi.
+ * Kalau kolom ini kosong/belum ada, sistem tetap jalan seperti biasa
+ * (pakai daftar REVERSE_INDICATOR_NAMES di kode sebagai default).
+ */
+function tambahKolomArahTarget() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
+  const lastCol = sheet.getLastColumn();
+  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headerRow.indexOf('Arah Target') > -1) return; // sudah ada, tidak perlu ditambah lagi
+  sheet.getRange(1, lastCol + 1).setValue('Arah Target');
+}
+
+function tambahKolomAkurasi() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(DATA_SHEET_NAME);
+  sheet.getRange(1, DATA_HEADERS.length - 2).setValue('Akurasi Validasi (%)');
+  sheet.getRange(1, DATA_HEADERS.length - 1).setValue('Analisa Validator');
+  sheet.getRange(1, DATA_HEADERS.length).setValue('RTL Validator');
+}
+
 function setupSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -299,13 +327,23 @@ function getRooms() {
 function getIndicatorDetails() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
   const lastRow = sheet.getLastRow();
-  const data = sheet.getRange('B2:F' + lastRow).getValues();
+  const lastCol = Math.max(sheet.getLastColumn(), 6);
+  const headerRow = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const idxArah = headerRow.indexOf('Arah Target'); // -1 kalau kolom ini belum ditambahkan admin
+  const data = sheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
   return data
-    .filter(function (row) { return row[0]; })
+    .filter(function (row) { return row[1]; })
     .map(function (row) {
-      const target = (row[3] === '' || row[3] === undefined) ? null : Number(row[3]);
-      const reverse = REVERSE_INDICATOR_NAMES.map(normText).indexOf(normText(row[0])) > -1;
-      return { nama: row[0], num: row[1] || '', den: row[2] || '', target: target, tipe: row[4] || 'persen', reverse: reverse };
+      const nama = row[1];
+      const target = (row[4] === '' || row[4] === undefined) ? null : Number(row[4]);
+      let reverse = REVERSE_INDICATOR_NAMES.map(normText).indexOf(normText(nama)) > -1;
+      // Kalau admin sudah isi kolom "Arah Target" di Config, itu yang dipakai
+      // (lebih diprioritaskan daripada daftar hardcode REVERSE_INDICATOR_NAMES).
+      if (idxArah > -1 && row[idxArah]) {
+        const arah = normText(row[idxArah]);
+        reverse = (arah.indexOf('maksimal') > -1 || arah.indexOf('turun') > -1 || arah.indexOf('kecil') > -1 || arah.indexOf('rendah') > -1);
+      }
+      return { nama: nama, num: row[2] || '', den: row[3] || '', target: target, tipe: row[5] || 'persen', reverse: reverse };
     });
 }
 
@@ -359,7 +397,7 @@ function submitData(payload) {
       Number(entry.denominator) || 0, 
       payload.diisiOleh || '', 
       entry.keterangan || '',
-      '⏳ Menunggu', '', '', '', '', ''
+      '⏳ Menunggu', '', '', '', '', '', '', '', ''
     ];
     
     if (foundRowIndex > -1) {
@@ -432,7 +470,14 @@ function getRecapMatrix(mode, params) {
       if (ind.tipe === 'hitungan') return t.numerator;
       return t.denominator > 0 ? Math.round((t.numerator / t.denominator) * 1000) / 10 : null;
     });
-    return { indikator: ind.nama, tipe: ind.tipe, values: values };
+    let totalNum = 0, totalDen = 0;
+    if (totals[indKey]) {
+      Object.keys(totals[indKey]).forEach(function (roomKey) {
+        totalNum += totals[indKey][roomKey].numerator;
+        totalDen += totals[indKey][roomKey].denominator;
+      });
+    }
+    return { indikator: ind.nama, tipe: ind.tipe, values: values, totalNum: totalNum, totalDen: totalDen };
   });
 
   const pics = rooms.map(function (room) {
@@ -627,6 +672,49 @@ function computeReportData(startDateStr, endDateStr) {
   });
 }
 
+/**
+ * Palet warna & ikon untuk mempercantik slide PPT supaya tiap indikator
+ * punya "identitas" visual sendiri (tapi tetap simple, grafik tetap fokus utama).
+ * Dipilih otomatis & konsisten berdasarkan nama indikatornya (hash sederhana),
+ * jadi indikator yang sama akan selalu dapat warna yang sama tiap kali export.
+ */
+const SLIDE_THEMES = [
+  { accent: '#3d85c6', tint: '#eaf2fb' }, // biru
+  { accent: '#6aa84f', tint: '#eef7ec' }, // hijau
+  { accent: '#8e63ce', tint: '#f2ecfa' }, // ungu
+  { accent: '#e69138', tint: '#fdf1e3' }, // oranye
+  { accent: '#45818e', tint: '#e9f4f5' }, // teal
+  { accent: '#c27ba0', tint: '#faeef4' }  // pink
+];
+
+function getSlideTheme(nama) {
+  const s = String(nama || '');
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash += s.charCodeAt(i);
+  return SLIDE_THEMES[hash % SLIDE_THEMES.length];
+}
+
+/**
+ * Pilih ikon kecil berdasarkan kata kunci di nama indikator, biar slide
+ * terasa "sesuai judul" tanpa perlu desain rumit. Kalau tidak ada kata kunci
+ * yang cocok, pakai ikon umum.
+ */
+function getIndicatorIcon(nama) {
+  const n = String(nama || '').toLowerCase();
+  if (n.indexOf('cuci tangan') > -1 || n.indexOf('tangan') > -1) return '🧼';
+  if (n.indexOf('napza') > -1 || n.indexOf('rehabilitasi') > -1) return '🧠';
+  if (n.indexOf('jatuh') > -1) return '🛡️';
+  if (n.indexOf('obat') > -1 || n.indexOf('psikotropika') > -1) return '💊';
+  if (n.indexOf('identifikasi pasien') > -1) return '🪪';
+  if (n.indexOf('ect') > -1) return '⚕️';
+  if (n.indexOf('penelitian') > -1 || n.indexOf('dipublikasikan') > -1) return '🔬';
+  if (n.indexOf('artikel') > -1 || n.indexOf('website') > -1) return '📰';
+  if (n.indexOf('jejaring') > -1 || n.indexOf('mou') > -1 || n.indexOf('kontrak') > -1) return '🤝';
+  if (n.indexOf('konseling') > -1 || n.indexOf('komunikasi') > -1) return '💬';
+  if (n.indexOf('skrining') > -1 || n.indexOf('fast track') > -1) return '📋';
+  return '📊';
+}
+
 function buildPptPresentation(startDateStr, endDateStr) {
   const reportData = computeReportData(startDateStr, endDateStr);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -705,6 +793,13 @@ function buildPptPresentation(startDateStr, endDateStr) {
 
     const slide = pres.appendSlide(SlidesApp.PredefinedLayout.BLANK);
 
+    const theme = getSlideTheme(ind.nama);
+    const icon = getIndicatorIcon(ind.nama);
+
+    // Latar belakang slide diberi warna pastel sesuai tema indikator,
+    // supaya tidak putih polos & kosong, tapi tetap ringan (tidak mengganggu grafik).
+    slide.getBackground().setSolidFill(theme.tint);
+
     const pageWidth = pres.getPageWidth();
     const pageHeight = pres.getPageHeight();
     const margin = 20;
@@ -715,6 +810,12 @@ function buildPptPresentation(startDateStr, endDateStr) {
     const chartTop = 85; 
     const noteBoxTop = pageHeight - bottomMargin - noteBoxHeight;
     const chartHeight = noteBoxTop - gapBeforeNote - chartTop;
+
+    // Aksen tipis di sisi kiri slide (tidak menimpa area chart/banner),
+    // sekadar biar slide terasa punya identitas visual per indikator.
+    const accentBar = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, 0, 0, margin * 0.6, pageHeight);
+    accentBar.getFill().setSolidFill(theme.accent);
+    accentBar.getBorder().setTransparent();
 
     const leftBannerWidth = 100;
     const targetBannerWidth = 150;
@@ -730,9 +831,9 @@ function buildPptPresentation(startDateStr, endDateStr) {
     bannerLeft.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
 
     const bannerCenter = slide.insertShape(SlidesApp.ShapeType.RECTANGLE, margin + leftBannerWidth, 15, centerBannerWidth, bannerHeight);
-    bannerCenter.getFill().setSolidFill('#6fa8dc');
+    bannerCenter.getFill().setSolidFill(theme.accent);
     bannerCenter.getBorder().setTransparent();
-    bannerCenter.getText().setText(ind.nama);
+    bannerCenter.getText().setText(icon + ' ' + ind.nama);
     bannerCenter.getText().getTextStyle().setForegroundColor('#ffffff').setBold(true).setFontSize(13);
     bannerCenter.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
     bannerCenter.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
@@ -1033,42 +1134,138 @@ function getPendingValidations(username) {
   return pendingArray;
 }
 
+/**
+ * Mengambil daftar Catatan Validator untuk 1 ruangan tertentu, supaya
+ * bisa ditampilkan ke PIC ruangan itu saat login. Hanya catatan dengan
+ * status "❌ Kembalikan" yang ditampilkan.
+ * Catatan disimpan sama di semua baris harian dalam 1 bulan validasi,
+ * jadi dikelompokkan per Indikator + Bulan + Tahun.
+ */
+function getCatatanUntukRuangan(ruangan) {
+  var currentYear = new Date().getFullYear();
+  var data = getRawDataByYears(currentYear - 1, currentYear);
+  var targetRuangan = normText(ruangan);
+  var months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  var groups = {};
+
+  data.forEach(function (row) {
+    if (normText(row[2]) !== targetRuangan) return;
+    var catatan = row[13] ? String(row[13]).trim() : '';
+    if (!catatan) return;
+    var status = row[8] ? String(row[8]).trim() : '';
+    if (status !== '❌ Kembalikan') return;
+
+    var tgl = new Date(row[1]);
+    var bulan = tgl.getMonth() + 1;
+    var tahun = tgl.getFullYear();
+    var indikator = row[3] ? String(row[3]).trim() : '';
+    var key = indikator + '_' + bulan + '_' + tahun;
+
+    if (!groups[key]) {
+      groups[key] = {
+        indikator: indikator,
+        periode: months[bulan - 1] + ' ' + tahun,
+        status: status,
+        catatan: catatan,
+        tglAwal: tgl,
+        tglAkhir: tgl
+      };
+    } else {
+      if (tgl < groups[key].tglAwal) groups[key].tglAwal = tgl;
+      if (tgl > groups[key].tglAkhir) groups[key].tglAkhir = tgl;
+    }
+  });
+
+  var tz = Session.getScriptTimeZone();
+  var result = Object.keys(groups).map(function (k) {
+    var g = groups[k];
+    var fmtAwal = Utilities.formatDate(g.tglAwal, tz, 'dd/MM');
+    var fmtAkhir = Utilities.formatDate(g.tglAkhir, tz, 'dd/MM');
+    var tanggalLabel = fmtAwal === fmtAkhir ? fmtAwal : (fmtAwal + ' - ' + fmtAkhir);
+    return {
+      indikator: g.indikator,
+      periode: g.periode,
+      tanggal: tanggalLabel,
+      status: g.status,
+      catatan: g.catatan,
+      urutan: g.tglAkhir.getTime()
+    };
+  });
+
+  result.sort(function (a, b) { return b.urutan - a.urutan; });
+  return result;
+}
+
 function saveValidation(payload) {
   try {
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Data Master');
     const rowIndexes = payload.rowIndexes; // Array baris dari sebulan penuh
-    
+
+    // Hitung ulang Capaian Bulanan (Total Num/Den) langsung dari baris-baris
+    // yang sedang divalidasi, supaya akurat walau ada pembulatan di client.
+    let totalNum = 0, totalDen = 0;
+    rowIndexes.forEach(function (rIndex) {
+      const nd = sheet.getRange(rIndex, 5, 1, 2).getValues()[0];
+      totalNum += Number(nd[0]) || 0;
+      totalDen += Number(nd[1]) || 0;
+    });
+    const capaian = totalDen > 0 ? (totalNum / totalDen) * 100 : null;
+
+    const sampel = Number(payload.sampel) || 0;
+    const numSampel = Number(payload.numSampel) || 0;
+    const temuan = sampel > 0 ? (numSampel / sampel) * 100 : null;
+
+    let akurasi = '';
+    if (capaian !== null && capaian > 0 && temuan !== null) {
+      akurasi = Math.round((1 - Math.abs(capaian - temuan) / capaian) * 100 * 100) / 100;
+    }
+
     // Update semua baris harian dalam 1 kali proses loop
     rowIndexes.forEach(function(rIndex) {
-      sheet.getRange(rIndex, 9, 1, 6).setValues([[
+      sheet.getRange(rIndex, 9, 1, 9).setValues([[
         payload.status,
         payload.populasi || '',
         payload.sampel || '',
         payload.numSampel || '',
         payload.link || '',
-        payload.catatan || ''
+        payload.catatan || '',
+        akurasi,
+        payload.analisa || '',
+        payload.rtl || ''
       ]]);
     });
-    
-    return { success: true, message: "Validasi bulanan berhasil disimpan massal!" };
+
+    return {
+      success: true,
+      message: "Validasi bulanan berhasil disimpan massal!",
+      capaian: capaian !== null ? Math.round(capaian * 100) / 100 : null,
+      temuan: temuan !== null ? Math.round(temuan * 100) / 100 : null,
+      akurasi: akurasi
+    };
   } catch(e) {
     return { success: false, message: "Gagal menyimpan: " + e.message };
   }
 }
 
-function downloadValidationReport(username, format) {
+/**
+ * Mengambil grup data yang sudah divalidasi (Valid / Dikembalikan) milik
+ * seorang validator (atau semua jika 'admin'). Dipakai bersama oleh
+ * downloadValidationReport() (untuk export) dan getValidatedRecapForDisplay()
+ * (untuk ditampilkan langsung di dashboard validator).
+ */
+function getValidatedGroups(username) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var dataSheet = ss.getSheetByName('Data Master');
   var data = dataSheet.getDataRange().getValues();
-  
+
   var configSheet = ss.getSheetByName('Config');
   var configData = configSheet.getDataRange().getValues();
   var headerConfig = configData[0];
   var idxInd = headerConfig.indexOf('Daftar Indikator');
   var idxVal = headerConfig.indexOf('Username Validator');
-  
+
   var valMap = {};
-  if(idxInd > -1 && idxVal > -1) {
+  if (idxInd > -1 && idxVal > -1) {
     for (var i = 1; i < configData.length; i++) {
       var indikator = configData[i][idxInd];
       var penilai = configData[i][idxVal];
@@ -1079,58 +1276,218 @@ function downloadValidationReport(username, format) {
   }
 
   var usr = username ? username.toString().trim().toLowerCase() : "";
+  var months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+  function getMonthYear(tglRaw) {
+    if (tglRaw && tglRaw instanceof Date) return months[tglRaw.getMonth()] + " " + tglRaw.getFullYear();
+    return tglRaw ? tglRaw.toString() : "";
+  }
+
+  // Pass 1: total SEMUA baris (berapapun statusnya) per ruangan+indikator+periode.
+  // Ini dipakai untuk mendeteksi kalau ruangan mengedit data SETELAH divalidasi
+  // (sehingga total di rekap validator jadi beda dengan total di rekap ruangan).
+  var fullTotals = {};
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var indName = row[3] ? row[3].toString().trim() : "";
+    var hakVal = valMap[indName] || "";
+    if (!(hakVal === usr || usr === 'admin')) continue;
+
+    var ruangan = row[2] ? row[2].toString().trim() : "";
+    var key = getMonthYear(row[1]) + "_" + ruangan + "_" + indName;
+    if (!fullTotals[key]) fullTotals[key] = { num: 0, den: 0 };
+    fullTotals[key].num += (Number(row[4]) || 0);
+    fullTotals[key].den += (Number(row[5]) || 0);
+  }
+
+  // Pass 2: hanya baris yang statusnya sudah Valid / Dikembalikan.
   var validatedGroups = {};
-  var rows = [];
-  
+
   for (var i = 1; i < data.length; i++) {
     var row = data[i];
     var indName = row[3] ? row[3].toString().trim() : "";
     var hakVal = valMap[indName] || "";
     var statusStr = row[8] ? row[8].toString().trim() : "";
-    
-    // Cek data yang sudah tervalidasi
-    if ((hakVal === usr || usr === 'admin') && (statusStr === '✅ Valid' || statusStr === '❌ Kembalikan')) {
-        var tglRaw = row[1];
-        var monthYear = "";
-        
-        if (tglRaw && tglRaw instanceof Date) {
-          var months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-          monthYear = months[tglRaw.getMonth()] + " " + tglRaw.getFullYear();
-        } else if (tglRaw) {
-          monthYear = tglRaw.toString();
-        }
-        
-        var ruangan = row[2] ? row[2].toString().trim() : "";
-        var key = monthYear + "_" + ruangan + "_" + indName;
 
-        // Grupkan laporannya jadi bulanan juga biar rapi
-        if (!validatedGroups[key]) {
-          validatedGroups[key] = {
-            periode: monthYear,
-            ruangan: ruangan,
-            indikator: indName,
-            num: 0, den: 0,
-            status: statusStr,
-            populasi: row[9] || '-',
-            sampel: row[10] || '-',
-            numSampel: row[11] || '-',
-            link: row[12] || '-',
-            catatan: row[13] || '-'
-          };
-        }
-        validatedGroups[key].num += (Number(row[4]) || 0);
-        validatedGroups[key].den += (Number(row[5]) || 0);
+    if ((hakVal === usr || usr === 'admin') && (statusStr === '✅ Valid' || statusStr === '❌ Kembalikan')) {
+      var monthYear = getMonthYear(row[1]);
+      var ruangan = row[2] ? row[2].toString().trim() : "";
+      var key = monthYear + "_" + ruangan + "_" + indName;
+
+      if (!validatedGroups[key]) {
+        validatedGroups[key] = {
+          periode: monthYear,
+          ruangan: ruangan,
+          indikator: indName,
+          num: 0, den: 0,
+          status: statusStr,
+          populasi: row[9] || '-',
+          sampel: row[10] || '-',
+          numSampel: row[11] || '-',
+          link: row[12] || '-',
+          catatan: row[13] || '-',
+          akurasi: row[14] || '',
+          analisa: row[15] || '-',
+          rtl: row[16] || '-'
+        };
+      }
+      validatedGroups[key].num += (Number(row[4]) || 0);
+      validatedGroups[key].den += (Number(row[5]) || 0);
     }
   }
-  
-  for(var k in validatedGroups) {
-     var vg = validatedGroups[k];
-     rows.push([vg.periode, vg.ruangan, vg.indikator, vg.num, vg.den, vg.status, vg.populasi, vg.sampel, vg.numSampel, vg.link, vg.catatan]);
+
+  Object.keys(validatedGroups).forEach(function (key) {
+    var g = validatedGroups[key];
+    var full = fullTotals[key] || { num: g.num, den: g.den };
+    g.numSaatIni = full.num;
+    g.denSaatIni = full.den;
+    g.perluValidasiUlang = (full.num !== g.num) || (full.den !== g.den);
+  });
+
+  return Object.values(validatedGroups);
+}
+
+/**
+ * Rekap hasil validasi untuk ditampilkan langsung di dashboard validator
+ * (bukan diunduh). Diurutkan dari periode terbaru.
+ */
+function getValidatedRecapForDisplay(username) {
+  var groups = getValidatedGroups(username);
+  groups.sort(function (a, b) {
+    if (a.periode === b.periode) return a.ruangan.localeCompare(b.ruangan);
+    return a.periode < b.periode ? 1 : -1;
+  });
+  return groups;
+}
+
+/**
+ * Hasil validasi (lengkap dengan Analisa & RTL dari validator) untuk
+ * ditampilkan ke PIC ruangan, supaya ruangan bisa lihat feedback validator.
+ * Bisa difilter per bulan & tahun biar gampang dicari (kalau dikosongkan,
+ * tampil semua periode tahun ini & tahun lalu).
+ */
+function getHasilValidasiUntukRuangan(ruangan, bulan, tahun) {
+  var currentYear = new Date().getFullYear();
+  var startYear = tahun ? Number(tahun) : currentYear - 1;
+  var endYear = tahun ? Number(tahun) : currentYear;
+  var data = getRawDataByYears(startYear, endYear);
+  var targetRuangan = (!ruangan || ruangan === 'SEMUA') ? null : normText(ruangan);
+  var months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  var groups = {};
+
+  data.forEach(function (row) {
+    if (targetRuangan && normText(row[2]) !== targetRuangan) return;
+    var statusStr = row[8] ? row[8].toString().trim() : '';
+    if (statusStr !== '✅ Valid' && statusStr !== '❌ Kembalikan') return;
+
+    var tgl = new Date(row[1]);
+    var bln = tgl.getMonth() + 1, thn = tgl.getFullYear();
+    if (bulan && bln !== Number(bulan)) return;
+    if (tahun && thn !== Number(tahun)) return;
+
+    var ruanganNama = row[2] ? row[2].toString().trim() : '';
+    var indikator = row[3] ? row[3].toString().trim() : '';
+    var key = ruanganNama + '_' + indikator + '_' + bln + '_' + thn;
+
+    if (!groups[key]) {
+      groups[key] = {
+        ruangan: ruanganNama,
+        indikator: indikator,
+        periode: months[bln - 1] + ' ' + thn,
+        num: 0, den: 0,
+        status: statusStr,
+        populasi: row[9] || '-',
+        sampel: row[10] || '-',
+        numSampel: row[11] || '-',
+        catatan: row[13] || '-',
+        akurasi: row[14] || '',
+        analisa: row[15] || '-',
+        rtl: row[16] || '-',
+        tglAwal: tgl,
+        tglAkhir: tgl
+      };
+    } else {
+      if (tgl < groups[key].tglAwal) groups[key].tglAwal = tgl;
+      if (tgl > groups[key].tglAkhir) groups[key].tglAkhir = tgl;
+    }
+    groups[key].num += (Number(row[4]) || 0);
+    groups[key].den += (Number(row[5]) || 0);
+  });
+
+  var tz = Session.getScriptTimeZone();
+  var result = Object.keys(groups).map(function (k) {
+    var g = groups[k];
+    var fmtAwal = Utilities.formatDate(g.tglAwal, tz, 'dd/MM');
+    var fmtAkhir = Utilities.formatDate(g.tglAkhir, tz, 'dd/MM');
+    g.tanggal = fmtAwal === fmtAkhir ? fmtAwal : (fmtAwal + ' - ' + fmtAkhir);
+    g.urutan = g.tglAkhir.getTime();
+    delete g.tglAwal;
+    delete g.tglAkhir;
+    return g;
+  });
+
+  result.sort(function (a, b) { return b.urutan - a.urutan; });
+  return result;
+}
+
+/**
+ * Total Numerator & Denominator (raw, bukan persen) per indikator untuk
+ * bulan & tahun tertentu, dibatasi hanya pada indikator yang menjadi
+ * tanggung jawab validator ybs (atau semua indikator kalau usernya 'admin').
+ */
+function getValidatorTotalNumDen(username, bulan, tahun) {
+  var configSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG_SHEET_NAME);
+  var configData = configSheet.getDataRange().getValues();
+  var headerConfig = configData[0];
+  var idxInd = headerConfig.indexOf('Daftar Indikator');
+  var idxVal = headerConfig.indexOf('Username Validator');
+
+  var valMap = {};
+  var indicatorOrder = [];
+  if (idxInd > -1) {
+    for (var i = 1; i < configData.length; i++) {
+      var indikator = configData[i][idxInd];
+      if (!indikator) continue;
+      indikator = indikator.toString().trim();
+      indicatorOrder.push(indikator);
+      var penilai = idxVal > -1 ? configData[i][idxVal] : "";
+      valMap[indikator] = penilai ? penilai.toString().trim().toLowerCase() : "";
+    }
   }
-  
+
+  var usr = username ? username.toString().trim().toLowerCase() : "";
+  var myIndicators = indicatorOrder.filter(function (ind) {
+    return usr === 'admin' || valMap[ind] === usr;
+  });
+
+  var data = getRawDataByYears(Number(tahun), Number(tahun));
+  var totals = {};
+
+  data.forEach(function (row) {
+    var tgl = new Date(row[1]);
+    if ((tgl.getMonth() + 1) !== Number(bulan) || tgl.getFullYear() !== Number(tahun)) return;
+    var ind = row[3] ? row[3].toString().trim() : "";
+    if (myIndicators.indexOf(ind) === -1) return;
+    if (!totals[ind]) totals[ind] = { numerator: 0, denominator: 0 };
+    totals[ind].numerator += Number(row[4]) || 0;
+    totals[ind].denominator += Number(row[5]) || 0;
+  });
+
+  return myIndicators.map(function (ind) {
+    var t = totals[ind] || { numerator: 0, denominator: 0 };
+    return { indikator: ind, totalNum: t.numerator, totalDen: t.denominator };
+  });
+}
+
+function downloadValidationReport(username, format) {
+  var rows = getValidatedGroups(username).map(function (vg) {
+    return [vg.periode, vg.ruangan, vg.indikator, vg.num, vg.den, vg.status, vg.populasi, vg.sampel, vg.numSampel, vg.akurasi, (vg.perluValidasiUlang ? 'Perlu Validasi Ulang' : 'Sinkron'), vg.analisa, vg.rtl, vg.link, vg.catatan];
+  });
+
+  var usr = username ? username.toString().trim().toLowerCase() : "";
   var title = 'Riwayat_Validasi_Bulanan_' + (usr || 'Semua');
-  var headers = ['Periode', 'Ruangan', 'Indikator', 'Total Num', 'Total Den', 'Status', 'Populasi', 'Sampel', 'Num Sampel', 'Link Bukti', 'Catatan'];
-  
+  var headers = ['Periode', 'Ruangan', 'Indikator', 'Total Num', 'Total Den', 'Status', 'Populasi', 'Sampel', 'Num Sampel', 'Akurasi (%)', 'Status Data', 'Analisa', 'RTL', 'Link Bukti', 'Catatan'];
+
   if (format === 'pdf') {
     return exportRecapPdf(title, headers, rows);
   } else {
